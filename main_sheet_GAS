@@ -1,0 +1,427 @@
+/**
+ * Fetches NCAA Basketball scores and updates the "Live Scores" sheet.
+ * Timezone: CDT (GMT-5)
+ */
+function updateNCAALiveScores() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Live Scores");
+  
+  // 1. Format today's date for the API using CDT (GMT-5)
+  const today = new Date();
+  const dateStr = Utilities.formatDate(today, "GMT-5", "yyyy/MM/dd");
+  const timestampStr = Utilities.formatDate(today, "GMT-5", "yyyy-MM-dd HH:mm:ss");
+  
+  const url = `https://ncaa-api.henrygd.me/scoreboard/basketball-men/d1/${dateStr}`;
+
+  try {
+    const response = UrlFetchApp.fetch(url);
+    const data = JSON.parse(response.getContentText());
+    
+    // The API returns an array of objects where each object has a 'game' property
+    const gameEntries = data.games; 
+
+    if (!gameEntries || gameEntries.length === 0) {
+      console.log(`No games found for ${dateStr}.`);
+      return;
+    }
+
+    // 2. Map the nested API data to rows
+    const rows = gameEntries.map(entry => {
+      const g = entry.game; // Access the inner game object
+      return [
+        g.gameID,              // Column A: Game ID
+        g.home.names.short,    // Column B: Home Team
+        g.home.score,          // Column C: Home Score
+        g.away.names.short,    // Column D: Away Team
+        g.away.score,          // Column E: Away Score
+        g.status,              // Column F: Game Status
+        timestampStr           // Column G: Updated (CDT)
+      ];
+    });
+
+    // 3. Append data to the end of the sheet
+    const lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow + 1, 1, rows.length, rows[0].length).setValues(rows);
+
+    // 4. Remove duplicates (keeping the most recent)
+    removeDuplicatesByGameId(sheet);
+
+    console.log(`Successfully updated ${rows.length} games at ${timestampStr} CDT.`);
+  } catch (e) {
+    console.error("Error fetching NCAA data: " + e.toString());
+  }
+}
+
+/**
+ * Deduplication logic: iterates through the sheet and keeps only the latest
+ * row for each unique Game ID.
+ */
+function removeDuplicatesByGameId(sheet) {
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return;
+
+  const header = data.shift();
+  const uniqueGames = new Map();
+
+  // Map overwrites previous keys with new values, 
+  // ensuring the bottom-most (latest) row is preserved.
+  data.forEach(row => {
+    const gameId = row[0];
+    if (gameId) {
+      uniqueGames.set(gameId, row);
+    }
+  });
+
+  const cleanData = [header, ...Array.from(uniqueGames.values())];
+
+  sheet.clearContents();
+  sheet.getRange(1, 1, cleanData.length, cleanData[0].length).setValues(cleanData);
+}
+
+/**
+ * Fetches NCAA schedule and splits "Matchup" into Away and Home Team columns.
+ */
+function updateNCAAMonthlySchedule() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("schedule");
+  
+  const allGameRows = [];
+  const today = new Date();
+  const endDate = new Date(today.getFullYear(), today.getMonth() + 2, 0);
+  let loopDate = new Date(today);
+
+  while (loopDate <= endDate) {
+    const dateStr = Utilities.formatDate(loopDate, "GMT-5", "yyyy/MM/dd");
+    const url = `https://ncaa-api.henrygd.me/scoreboard/basketball-men/d1/${dateStr}`;
+
+    try {
+      const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+      
+      if (response.getResponseCode() === 200) {
+        const data = JSON.parse(response.getContentText());
+        
+        if (data.games && data.games.length > 0) {
+          data.games.forEach(entry => {
+            const g = entry.game;
+            
+            // --- NEW SPLIT LOGIC ---
+            const awayTeam = g.away.names.short;
+            const homeTeam = g.home.names.short;
+            // -----------------------
+
+            allGameRows.push([
+              g.gameID,          // Col A
+              g.startTime,       // Col B
+              g.network || "N/A",// Col C
+              awayTeam,          // Col D (New)
+              homeTeam,          // Col E (New)
+              `${awayTeam} @ ${homeTeam}`, // Col F (Original Matchup)
+              dateStr            // Col G
+            ]);
+          });
+        }
+      }
+      Utilities.sleep(200); 
+    } catch (e) {
+      console.error(`Error on ${dateStr}: ${e.toString()}`);
+    }
+    loopDate.setDate(loopDate.getDate() + 1);
+  }
+
+  if (allGameRows.length > 0) {
+    sheet.clearContents();
+    // Updated Headers
+    sheet.appendRow(["Game ID", "Start Time", "Network", "Away Team", "Home Team", "Matchup", "Game Date"]);
+    sheet.getRange(2, 1, allGameRows.length, allGameRows[0].length).setValues(allGameRows);
+    
+    console.log(`Finished! Total games synced: ${allGameRows.length}`);
+  }
+}
+/**
+ * One-time fetch to populate the "Schools" reference sheet.
+ * This version includes better error checking for the response structure.
+ */
+function getSchoolsOnce() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName("Schools");
+  if (!sheet) {
+    sheet = ss.insertSheet("Schools");
+  }
+  
+  const url = "https://ncaa-api.henrygd.me/schools-index";
+
+  try {
+    const response = UrlFetchApp.fetch(url);
+    const data = JSON.parse(response.getContentText());
+    
+    // Log the data to the console so we can debug if it fails
+    console.log("Raw API Data Sample:", JSON.stringify(data).substring(0, 200));
+
+    // Fix: Check if data is a direct array, or if it's inside 'schools' or 'data'
+    let schoolsList = [];
+    if (Array.isArray(data)) {
+      schoolsList = data;
+    } else if (data.schools && Array.isArray(data.schools)) {
+      schoolsList = data.schools;
+    } else if (data.data && Array.isArray(data.data)) {
+      schoolsList = data.data;
+    }
+
+    if (schoolsList.length === 0) {
+      throw new Error("Could not find a list of schools in the API response. Check Execution Logs.");
+    }
+
+    // 1. Map the school objects to rows
+    // Adjust keys (name, conf, division) based on what the log shows
+    const rows = schoolsList.map(school => {
+      return [
+        school.name || school.school || "Unknown",
+        school.conf || school.conference || "N/A",
+        school.division || "N/A"
+      ];
+    });
+
+    // 2. Sort schools alphabetically
+    rows.sort((a, b) => a[0].localeCompare(b[0]));
+
+    // 3. Update the sheet
+    sheet.clearContents();
+    sheet.appendRow(["School Name", "Conference", "Division"]);
+    sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+
+    console.log(`Successfully imported ${rows.length} schools.`);
+    SpreadsheetApp.getUi().alert(`Success! Imported ${rows.length} schools.`);
+
+  } catch (e) {
+    console.error("Error: " + e.toString());
+    SpreadsheetApp.getUi().alert("Error: " + e.message);
+  }
+}
+
+/**
+ * Translates school names, logs unknown names to Mapping sheet,
+ * and strictly prevents duplicate entries in the Mapping sheet.
+ */
+function translateOddsSchoolNames() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const oddsSheet = ss.getSheetByName("Odds");
+  const schoolsSheet = ss.getSheetByName("Schools");
+  const mappingSheet = ss.getSheetByName("Mapping");
+
+  // 1. Get Reference Data from Schools Index
+  const schoolIndex = schoolsSheet.getRange(2, 1, schoolsSheet.getLastRow() - 1, 1).getValues().flat();
+  
+  // 2. Load Existing Mappings (to avoid duplicates already on the sheet)
+  const mappingValues = mappingSheet.getDataRange().getValues();
+  const aliasMap = new Map();
+  const existingAliases = new Set(); 
+  
+  mappingValues.forEach(row => {
+    const messyName = row[0].toString().trim();
+    if (messyName) {
+      aliasMap.set(messyName.toLowerCase(), row[1]); // Column B is the clean name
+      existingAliases.add(messyName.toLowerCase());
+    }
+  });
+
+  // 3. Get Odds data (Cols E and F)
+  const lastRow = oddsSheet.getLastRow();
+  if (lastRow < 2) return;
+  const oddsData = oddsSheet.getRange(5, 5, lastRow - 4, 2).getValues(); 
+  
+  // A Set to track unique "Needs Mapping" names in THIS specific run
+  const batchNewMappings = new Set();
+
+  const translatedRows = oddsData.map(row => {
+    return [
+      processAndLogMatch(row[0], schoolIndex, aliasMap, existingAliases, batchNewMappings),
+      processAndLogMatch(row[1], schoolIndex, aliasMap, existingAliases, batchNewMappings)
+    ];
+  });
+
+  // 4. Append only truly unique new names to the Mapping sheet
+  if (batchNewMappings.size > 0) {
+    const finalRowsToAppend = Array.from(batchNewMappings).map(name => [name, ""]);
+    mappingSheet.getRange(mappingSheet.getLastRow() + 1, 1, finalRowsToAppend.length, 2).setValues(finalRowsToAppend);
+  }
+
+  // 5. Write results to Columns P and Q
+  oddsSheet.getRange(5, 16, translatedRows.length, 2).setValues(translatedRows);
+  
+  console.log(`Translation complete. ${batchNewMappings.size} new schools added to Mapping sheet.`);
+}
+
+/**
+ * Helper to determine match and flag unique new aliases.
+ */
+function processAndLogMatch(rawName, index, aliasMap, existingAliases, batchNewMappings) {
+  if (!rawName) return "";
+  const normalizedRaw = rawName.toString().trim();
+  const lowerRaw = normalizedRaw.toLowerCase();
+  
+  // Check 1: Existing Mapping (If it exists and has a value, use it)
+  if (aliasMap.has(lowerRaw) && aliasMap.get(lowerRaw) !== "") {
+    return aliasMap.get(lowerRaw);
+  }
+
+  // Check 2: Exact Match in Index
+  if (index.includes(normalizedRaw)) return normalizedRaw;
+
+  // Check 3: Fuzzy Match Logic
+  const clean = (str) => {
+    return str.toLowerCase()
+      .replace(/university|univ\.|univ|state|st\.|st|wildcats|tigers|bulldogs|lions|volunteers|jayhawks/g, "")
+      .replace(/[^a-z0-9]/g, "")
+      .trim();
+  };
+
+  const cleanRaw = clean(normalizedRaw);
+  for (let school of index) {
+    if (clean(school) === cleanRaw || clean(school).includes(cleanRaw) || cleanRaw.includes(clean(school))) {
+      return school;
+    }
+  }
+
+  // Check 4: If still not found, add to Mapping sheet ONLY if not already there
+  if (!existingAliases.has(lowerRaw) && !batchNewMappings.has(normalizedRaw)) {
+    batchNewMappings.add(normalizedRaw);
+  }
+
+  return "NEEDS MAPPING"; 
+}
+
+
+function getOdds() {
+  /**
+   * Get odds from the The Odds API and output the response to a spreadsheet.
+   * 
+   * Note this code does not handle futures (outrights) markets at this time.
+   */
+
+  const SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/17DppVjvWcruxiqHGwzk8zIrYHybqq0p0hMUswIM42eU/edit?gid=314034195#gid=0' // Get this from your browser
+  const SHEET_NAME = 'Odds' // The name of the spreadsheet tab. Note all data in this sheet will be cleared with each request
+
+  const API_KEY = '66aaa18b27e6fa438e8c3f7d9ad7896f' // Get an API key from https://the-odds-api.com/#get-access
+  const SPORT_KEY = 'basketball_ncaab' // For a list of sport keys, see https://the-odds-api.com/sports-odds-data/sports-apis.html
+  const MARKETS = 'h2h,spreads,totals' // Comma separated list of betting markets. Valid values are h2h, spreads & totals
+  const REGIONS = 'us' // Comma separated list of bookmaker regions. Valid values are us, uk, eu and au
+  const BOOKMAKERS = 'draftkings' // Optional - if specified, it overrides REGIONS. A list of comma separated bookmakers from any region. For example: draftkings,pinnacle See all bookmakers at https://the-odds-api.com/sports-odds-data/bookmaker-apis.html
+  const ODDS_FORMAT = 'american' // Valid values are american and decimal.
+  const DATE_FORMAT = 'iso' // Valid values are unix and iso.
+
+  // Request the data from the API
+  const data = fetchOdds(API_KEY, SPORT_KEY, MARKETS, REGIONS, BOOKMAKERS, ODDS_FORMAT, DATE_FORMAT)
+
+  // Prepare the spreadsheet for the data output
+  // Note this clears any existing data on the spreadsheet
+  const ws = SpreadsheetApp.openByUrl(SPREADSHEET_URL).getSheetByName(SHEET_NAME);
+  const wslastrow = ws.getLastRow();
+  const wsdatarange = ws.getRange(1,1,wslastrow,15);
+  wsdatarange.clearContent();
+
+  // Output meta data starting in row 1, column 1
+  ws.getRange(1, 1, data.metaData.length, data.metaData[0].length).setValues(data.metaData)
+
+  // Output event data 2 rows below the meta data
+  ws.getRange(data.metaData.length + 2, 1, data.eventData.length, data.eventData[0].length).setValues(data.eventData)
+}
+
+
+/**
+ * Calls v4 of The Odds API and returns odds data in a tabular structure
+ * For details, see https://the-odds-api.com/liveapi/guides/v4/#parameters-2
+ *
+ * @param {string} apiKey Get an API key from https://the-odds-api.com/#get-access
+ * @param {string} sportKey For a list of sport keys, see https://the-odds-api.com/sports-odds-data/sports-apis.html
+ * @param {string} markets Comma separated list of betting markets. Valid values are h2h, spreads & totals
+ * @param {string} regions Comma separated list of bookmaker regions. Valid values are us, uk, eu and au
+ * @param {string} oddsFormat Valid values are american and decimal.
+ * @param {string} dateFormat Valid values are unix and iso.
+ * @return {object} A dictionary containing keys for metaData and eventData, each with a value as a 2D array (tabular) for easy output to a spreadsheet. If the request fails, event_data will be null.
+ */
+function fetchOdds(apiKey, sportKey, markets, regions, bookmakers, oddsFormat, dateFormat) {
+  const bookmakersParam = bookmakers ? `bookmakers=${bookmakers}` : `regions=${regions}`
+  const url = `https://api.the-odds-api.com/v4/sports/${sportKey}/odds?apiKey=${apiKey}&${bookmakersParam}&markets=${markets}&oddsFormat=${oddsFormat}&dateFormat=${dateFormat}`
+
+  const response = UrlFetchApp.fetch(url, {
+    headers: {
+      'content-type': 'application/json'
+    },
+  })  
+  
+  return {
+    metaData: formatResponseMetaData(response.getHeaders()),
+    eventData: formatEvents(JSON.parse(response.getContentText())),
+  }
+
+}
+
+function formatEvents(events) {
+  /**
+   * Restructure the JSON response into a 2D array, suitable for outputting to a spreadsheet
+   */
+  const rows = [
+    [
+      'id',
+      'commence_time',
+      'bookmaker',
+      'last_update',
+      'home_team',
+      'away_team',
+      'market',
+      'label_1',
+      'odd_1',
+      'point_1',
+      'label_2',
+      'odd_2',
+      'point_2',
+      'odd_draw',
+    ]
+  ]
+
+  let outcome_home
+  let outcome_away
+  let outcome_draw
+
+  for (const event of events) {
+    for (const bookmaker of event.bookmakers) {
+      for (const market of bookmaker.markets) {
+        if (market.key === 'totals') {
+          outcome_home = market.outcomes.filter(outcome => outcome.name === 'Over')[0]
+          outcome_away = market.outcomes.filter(outcome => outcome.name === 'Under')[0]
+          outcome_draw = {}
+        } else {
+          outcome_home = market.outcomes.filter(outcome => outcome.name === event.home_team)[0]
+          outcome_away = market.outcomes.filter(outcome => outcome.name === event.away_team)[0]
+          outcome_draw = market.outcomes.filter(outcome => outcome.name === 'Draw')[0] ?? {}
+        }
+
+        rows.push([
+          event.id,
+          event.commence_time,
+          bookmaker.key,
+          bookmaker.last_update,
+          event.home_team,
+          event.away_team,
+          market.key,
+          outcome_home.name,
+          outcome_home.price,
+          outcome_home?.point,
+          outcome_away.name,
+          outcome_away.price,
+          outcome_away?.point,
+          outcome_draw?.price,
+        ])
+      }
+    }
+  }
+
+  return rows
+}
+
+function formatResponseMetaData(headers) {
+  return [
+    ['Requests Used', headers['x-requests-used']],
+    ['Requests Remaining', headers['x-requests-remaining']],
+  ]
+}
