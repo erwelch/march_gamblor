@@ -18,6 +18,7 @@ export type Database = {
           username?: string
           balance?: number
         }
+        Relationships: []
       }
       games: {
         Row: {
@@ -34,8 +35,30 @@ export type Database = {
           created_at: string
           updated_at: string
         }
-        Insert: Omit<Database['public']['Tables']['games']['Row'], 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Omit<Database['public']['Tables']['games']['Row'], 'id' | 'created_at'>>
+        Insert: {
+          ncaa_game_id: string
+          home_team: string
+          away_team: string
+          start_time: string
+          home_score?: number | null
+          away_score?: number | null
+          status?: 'scheduled' | 'live' | 'final'
+          network?: string | null
+          game_date: string
+        }
+        Update: {
+          ncaa_game_id?: string
+          home_team?: string
+          away_team?: string
+          start_time?: string
+          home_score?: number | null
+          away_score?: number | null
+          status?: 'scheduled' | 'live' | 'final'
+          network?: string | null
+          game_date?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       odds: {
         Row: {
@@ -52,8 +75,32 @@ export type Database = {
           under_price: number | null
           fetched_at: string
         }
-        Insert: Omit<Database['public']['Tables']['odds']['Row'], 'id' | 'fetched_at'>
-        Update: Partial<Omit<Database['public']['Tables']['odds']['Row'], 'id'>>
+        Insert: {
+          game_id: string
+          bookmaker: string
+          home_ml?: number | null
+          away_ml?: number | null
+          home_spread?: number | null
+          home_spread_price?: number | null
+          away_spread_price?: number | null
+          over_under?: number | null
+          over_price?: number | null
+          under_price?: number | null
+        }
+        Update: {
+          game_id?: string
+          bookmaker?: string
+          home_ml?: number | null
+          away_ml?: number | null
+          home_spread?: number | null
+          home_spread_price?: number | null
+          away_spread_price?: number | null
+          over_under?: number | null
+          over_price?: number | null
+          under_price?: number | null
+          fetched_at?: string
+        }
+        Relationships: []
       }
       bets: {
         Row: {
@@ -82,6 +129,7 @@ export type Database = {
           payout?: number
           settled_at?: string
         }
+        Relationships: []
       }
     }
     Views: {
