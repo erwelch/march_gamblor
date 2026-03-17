@@ -17,24 +17,11 @@ export function formatSpread(spread: number | null | undefined): string {
   return spread >= 0 ? `+${spread}` : `${spread}`
 }
 
-export interface OddsApiEvent {
-  id: string
-  commence_time: string
-  home_team: string
-  away_team: string
-  bookmakers: Array<{
-    key: string
-    last_update: string
-    markets: Array<{
-      key: string
-      outcomes: Array<{ name: string; price: number; point?: number }>
-    }>
-  }>
-}
-
-export function parseOddsApiEvent(event: OddsApiEvent) {
-  const bookmaker = event.bookmakers[0]
-  if (!bookmaker) return null
+export function parseEventOdds(eventOdds: any, bookmakerName: string) {
+  // eventOdds is HistoricalEventOdds: { id, home, away, date, bookmakers: Record<string, Array<{name, odds[]}>> }
+  const bookmakerMarkets: Array<{ name: string; odds: any[] }> =
+    eventOdds?.bookmakers?.[bookmakerName]
+  if (!bookmakerMarkets || bookmakerMarkets.length === 0) return null
 
   let home_ml: number | null = null
   let away_ml: number | null = null
@@ -45,29 +32,42 @@ export function parseOddsApiEvent(event: OddsApiEvent) {
   let over_price: number | null = null
   let under_price: number | null = null
 
-  for (const market of bookmaker.markets) {
-    if (market.key === 'h2h') {
-      const home = market.outcomes.find(o => o.name === event.home_team)
-      const away = market.outcomes.find(o => o.name === event.away_team)
-      home_ml = home?.price ?? null
-      away_ml = away?.price ?? null
-    } else if (market.key === 'spreads') {
-      const home = market.outcomes.find(o => o.name === event.home_team)
-      const away = market.outcomes.find(o => o.name === event.away_team)
-      home_spread = home?.point ?? null
-      home_spread_price = home?.price ?? null
-      away_spread_price = away?.price ?? null
-    } else if (market.key === 'totals') {
-      const over = market.outcomes.find(o => o.name === 'Over')
-      const under = market.outcomes.find(o => o.name === 'Under')
-      over_under = over?.point ?? null
-      over_price = over?.price ?? null
-      under_price = under?.price ?? null
+  for (const market of bookmakerMarkets) {
+    if (market.name === 'ML') {
+      const line = market.odds?.[0]
+      if (line) {
+        home_ml = line.home != null ? parseFloat(line.home) : null
+        away_ml = line.away != null ? parseFloat(line.away) : null
+      }
+    } else if (market.name === 'Spread') {
+      // Pick the main line: the hdp entry whose absolute value is smallest
+      const lines: Array<{ hdp: number; home: string; away: string }> = market.odds ?? []
+      if (lines.length > 0) {
+        const main = lines.reduce((best, cur) =>
+          Math.abs(cur.hdp) < Math.abs(best.hdp) ? cur : best
+        )
+        home_spread = main.hdp
+        home_spread_price = main.home != null ? parseFloat(main.home) : null
+        away_spread_price = main.away != null ? parseFloat(main.away) : null
+      }
+    } else if (market.name === 'Totals') {
+      // Pick the most balanced line: hdp where |over - under| is smallest
+      const lines: Array<{ hdp: number; over: string; under: string }> = market.odds ?? []
+      if (lines.length > 0) {
+        const main = lines.reduce((best, cur) => {
+          const curDiff = Math.abs(parseFloat(cur.over) - parseFloat(cur.under))
+          const bestDiff = Math.abs(parseFloat(best.over) - parseFloat(best.under))
+          return curDiff < bestDiff ? cur : best
+        })
+        over_under = main.hdp
+        over_price = main.over != null ? parseFloat(main.over) : null
+        under_price = main.under != null ? parseFloat(main.under) : null
+      }
     }
   }
 
   return {
-    bookmaker: bookmaker.key,
+    bookmaker: bookmakerName,
     home_ml, away_ml,
     home_spread, home_spread_price, away_spread_price,
     over_under, over_price, under_price,

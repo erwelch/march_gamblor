@@ -2,6 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Debug Server",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx", "--env-file=.env"],
+      "args": ["src/index.ts"],
+      "cwd": "${workspaceFolder}/server",
+      "sourceMaps": true,
+      "resolveSourceMapLocations": ["${workspaceFolder}/**"],
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
       "name": "Next.js: debug server-side",
       "type": "node-terminal",
       "request": "launch",

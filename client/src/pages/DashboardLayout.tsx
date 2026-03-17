@@ -28,7 +28,7 @@ export default function DashboardLayout() {
 
   return (
     <div className="min-h-screen">
-      <NavBar username={username} balance={balance} />
+      <NavBar username={username} balance={balance} onBalanceChange={setBalance} />
       <main className="mx-auto max-w-6xl px-4 py-8">
         <Outlet />
       </main>

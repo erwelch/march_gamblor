@@ -157,7 +157,7 @@ function OddsButton({ label, value, hasExisting, onClick }: {
     <button
       onClick={onClick}
       disabled={hasExisting}
-      className="flex flex-col items-center rounded-lg bg-gray-800 px-2 py-1.5 text-xs ring-1 ring-gray-700 transition-colors hover:bg-gray-700 hover:ring-orange-500 disabled:cursor-not-allowed disabled:opacity-40"
+      className="flex flex-col items-center rounded-lg bg-gray-800 px-2 py-1.5 text-xs ring-1 ring-gray-700 transition-colors hover:bg-gray-700 hover:ring-orange-500 hover:scale-[1.03] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
     >
       <span className="truncate text-gray-400">{label}</span>
       <span className="font-semibold text-orange-400">{value}</span>

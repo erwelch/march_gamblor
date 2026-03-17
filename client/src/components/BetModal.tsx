@@ -86,10 +86,11 @@ export default function BetModal({ game, market, pick, odds, onClose, onBetPlace
               <label className="mb-1 block text-sm text-gray-400">Wager (credits)</label>
               <input
                 type="number"
-                min={1}
+                min={0.01}
                 max={10000}
+                step={0.01}
                 value={amount}
-                onChange={e => setAmount(Math.max(1, Math.floor(Number(e.target.value))))}
+                onChange={e => setAmount(Math.max(0.01, Math.round(Number(e.target.value) * 100) / 100))}
                 className="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-white ring-1 ring-gray-700 focus:outline-none focus:ring-orange-500"
               />
               <div className="mt-2 flex gap-2">
@@ -112,7 +113,7 @@ export default function BetModal({ game, market, pick, odds, onClose, onBetPlace
 
             <button
               onClick={handlePlace}
-              disabled={loading || amount < 1}
+              disabled={loading || amount < 0.01}
               className="w-full rounded-lg bg-orange-500 py-2 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-50"
             >
               {loading ? 'Placing…' : `Place ${amount.toLocaleString()} cr Bet`}

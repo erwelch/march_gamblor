@@ -1,29 +1,44 @@
+﻿import { createRequire } from 'module'
+const { OddsAPIClient } = createRequire(import.meta.url)('odds-api-io')
 import { createServiceClient } from './supabase'
-import { parseOddsApiEvent, type OddsApiEvent } from './odds'
+import { parseEventOdds } from './odds'
 
-export async function syncOdds(): Promise<{ upserted: number; total: number; error?: string }> {
+export async function syncOdds() {
   const API_KEY = process.env.ODDS_API_KEY
   if (!API_KEY) return { upserted: 0, total: 0, error: 'ODDS_API_KEY not set' }
 
-  const url = `https://api.the-odds-api.com/v4/sports/basketball_ncaab/odds?apiKey=${API_KEY}&bookmakers=draftkings&markets=h2h,spreads,totals&oddsFormat=american&dateFormat=iso`
+  const client = new OddsAPIClient({ apiKey: API_KEY })
 
-  const res = await fetch(url)
-  if (!res.ok) return { upserted: 0, total: 0, error: `Odds API error: ${res.status}` }
+  let events
+  try {
+    events = await client.getEvents({
+      sport: 'basketball',
+      league: 'usa-ncaa-division-i-national-championship',
+      status: 'pending,live',
+    })
+  } catch (err: any) {
+    return { upserted: 0, total: 0, error: `Failed to fetch events: ${err?.message ?? err}` }
+  }
 
-  const events: OddsApiEvent[] = await res.json()
+  if (!events || events.length === 0) return { upserted: 0, total: 0 }
+
   const supabase = createServiceClient()
   let upserted = 0
 
   for (const event of events) {
+    const homeTeam = event.home
+    const awayTeam = event.away
+    const startTime = event.date
+
     const { data: game, error: gameError } = await supabase
       .from('games')
       .upsert(
         {
           ncaa_game_id: event.id,
-          home_team: event.home_team,
-          away_team: event.away_team,
-          start_time: event.commence_time,
-          game_date: event.commence_time.substring(0, 10),
+          home_team: homeTeam,
+          away_team: awayTeam,
+          start_time: startTime,
+          game_date: startTime.substring(0, 10),
         },
         { onConflict: 'ncaa_game_id', ignoreDuplicates: false }
       )
@@ -32,7 +47,23 @@ export async function syncOdds(): Promise<{ upserted: number; total: number; err
 
     if (gameError || !game) continue
 
-    const parsed = parseOddsApiEvent(event)
+    let eventOdds
+    try {
+      eventOdds = await client.getEventOdds({
+        eventId: String(event.id),
+        bookmakers: 'DraftKings,BetMGM',
+        region: 'us',
+        oddsFormat: 'american',
+        oddTypes: 'h2h,spreads,totals',
+      })
+    } catch (err: any) {
+      console.warn(`[syncOdds] Failed to fetch odds for event ${event.id}:`, err?.message ?? err)
+      continue
+    }
+
+    if (!eventOdds) continue
+
+    const parsed = parseEventOdds(eventOdds, 'DraftKings')
     if (!parsed) continue
 
     const { error: oddsError } = await supabase.from('odds').upsert(
