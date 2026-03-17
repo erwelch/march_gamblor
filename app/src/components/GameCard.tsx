@@ -8,7 +8,7 @@ import BetModal from '@/components/BetModal'
 
 interface GameCardProps {
   game: GameWithOdds
-  hasExistingBet: (market: string) => boolean
+  bettedKeys: string[]
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -17,8 +17,10 @@ const STATUS_BADGE: Record<string, string> = {
   final: 'bg-gray-700/50 text-gray-500 ring-gray-600/30',
 }
 
-export default function GameCard({ game, hasExistingBet }: GameCardProps) {
+export default function GameCard({ game, bettedKeys }: GameCardProps) {
   const [betModal, setBetModal] = useState<{ market: 'h2h' | 'spreads' | 'totals'; pick: 'home' | 'away' | 'over' | 'under'; odds: number } | null>(null)
+  const bettedSet = new Set(bettedKeys)
+  const hasExistingBet = (market: string) => bettedSet.has(`${game.id}:${market}`)
   const o = game.odds
 
   const isLocked = game.status !== 'scheduled' || new Date(game.start_time) <= new Date()
