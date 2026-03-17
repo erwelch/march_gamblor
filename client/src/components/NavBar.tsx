@@ -17,6 +17,7 @@ export default function NavBar({ username, balance }: NavBarProps) {
 
   const navLinks = [
     { href: '/dashboard', label: 'Games' },
+    { href: '/dashboard/bets', label: 'Bets' },
     { href: '/dashboard/leaderboard', label: 'Leaderboard' },
   ]
 

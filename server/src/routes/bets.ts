@@ -6,6 +6,24 @@ import type { Database } from '../lib/types.js'
 type BetInsert = Database['public']['Tables']['bets']['Insert']
 
 export async function betsRoutes(app: FastifyInstance) {
+  app.get('/bets', { preHandler: requireAuth }, async (request, reply) => {
+    const user = (request as any).user
+    const supabase = (request as any).supabase
+
+    const { data: bets, error } = await supabase
+      .from('bets')
+      .select('*, games(home_team, away_team, status, home_score, away_score)')
+      .eq('user_id', user.id)
+      .order('placed_at', { ascending: false })
+
+    if (error) {
+      console.error('Bets fetch error:', error)
+      return reply.status(500).send({ error: 'Failed to fetch bets' })
+    }
+
+    return reply.send({ bets: bets ?? [] })
+  })
+
   app.post('/bets', { preHandler: requireAuth }, async (request, reply) => {
     const user = (request as any).user
     const supabase = (request as any).supabase

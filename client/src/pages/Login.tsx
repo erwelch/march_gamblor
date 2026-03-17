@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/api'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -20,6 +21,8 @@ export default function LoginPage() {
       setError(error.message)
       setLoading(false)
     } else {
+      // Ensure a profile row exists for this user
+      await apiFetch('/api/profile').catch(() => {})
       navigate('/dashboard')
     }
   }
@@ -68,6 +71,12 @@ export default function LoginPage() {
           >
             {loading ? 'Signing in…' : 'Sign In'}
           </button>
+
+          <p className="text-center text-sm">
+            <Link to="/forgot-password" className="text-gray-500 hover:text-orange-400">
+              Forgot password?
+            </Link>
+          </p>
         </form>
 
         <p className="mt-4 text-center text-sm text-gray-500">

@@ -22,7 +22,7 @@ export default function GameCard({ game, bettedKeys, onBetPlaced }: GameCardProp
   const hasExistingBet = (market: string) => bettedSet.has(`${game.id}:${market}`)
   const o = game.odds
 
-  const isLocked = game.status !== 'scheduled' || new Date(game.start_time) <= new Date()
+  const isLocked = game.status === 'final' || (!o && new Date(game.start_time) <= new Date())
 
   return (
     <>

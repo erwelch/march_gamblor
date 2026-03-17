@@ -4,9 +4,12 @@ import { supabase } from './lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 import LoginPage from './pages/Login'
 import SignupPage from './pages/Signup'
+import ForgotPasswordPage from './pages/ForgotPassword'
+import ResetPasswordPage from './pages/ResetPassword'
 import DashboardLayout from './pages/DashboardLayout'
 import DashboardPage from './pages/Dashboard'
 import LeaderboardPage from './pages/Leaderboard'
+import BetsPage from './pages/Bets'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
@@ -28,6 +31,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route
           path="/dashboard"
           element={
@@ -38,6 +43,7 @@ export default function App() {
         >
           <Route index element={<DashboardPage />} />
           <Route path="leaderboard" element={<LeaderboardPage />} />
+          <Route path="bets" element={<BetsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

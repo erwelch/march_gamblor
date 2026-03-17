@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/api'
 
 export default function SignupPage() {
   const navigate = useNavigate()
@@ -21,7 +22,7 @@ export default function SignupPage() {
       return
     }
 
-    const { error } = await supabase.auth.signUp({
+    const { data: signUpData, error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { username } },
@@ -31,6 +32,8 @@ export default function SignupPage() {
       setError(error.message)
       setLoading(false)
     } else {
+      // Ensure a profile row exists via the server (handles RLS correctly)
+      await apiFetch('/api/profile').catch(() => {})
       navigate('/dashboard')
     }
   }

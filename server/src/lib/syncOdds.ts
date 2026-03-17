@@ -24,7 +24,6 @@ export async function syncOdds(): Promise<{ upserted: number; total: number; err
           away_team: event.away_team,
           start_time: event.commence_time,
           game_date: event.commence_time.substring(0, 10),
-          status: 'scheduled',
         },
         { onConflict: 'ncaa_game_id', ignoreDuplicates: false }
       )
