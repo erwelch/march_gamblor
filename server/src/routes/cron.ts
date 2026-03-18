@@ -19,7 +19,7 @@ async function fetchScoresForDate(dateStr: string): Promise<NcaaGame[]> {
   return (data.games ?? []).map((e: { game: NcaaGame }) => e.game)
 }
 
-const INTERNAL_HOST = 'march_gamblor.railway.internal'
+const INTERNAL_HOST = 'marchgamblor.railway.internal'
 
 function isAuthorized(request: FastifyRequest): boolean {
   const host = request.headers.host?.split(':')[0]
