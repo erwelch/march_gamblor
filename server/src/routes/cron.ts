@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { syncOdds2 as syncOdds } from '../lib/syncOdds2'
 import { createServiceClient } from '../lib/supabase'
 import { calculatePayout } from '../lib/odds'
@@ -19,10 +19,17 @@ async function fetchScoresForDate(dateStr: string): Promise<NcaaGame[]> {
   return (data.games ?? []).map((e: { game: NcaaGame }) => e.game)
 }
 
+const INTERNAL_HOST = 'march_gamblor.railway.internal'
+
+function isAuthorized(request: FastifyRequest): boolean {
+  const host = request.headers.host?.split(':')[0]
+  if (host === INTERNAL_HOST) return true
+  return request.headers.authorization === `Bearer ${process.env.CRON_SECRET}`
+}
+
 export async function cronRoutes(app: FastifyInstance) {
   app.get('/sync-odds', async (request, reply) => {
-    const authHeader = request.headers.authorization
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (!isAuthorized(request)) {
       return reply.status(401).send({ error: 'Unauthorized' })
     }
 
@@ -33,8 +40,7 @@ export async function cronRoutes(app: FastifyInstance) {
   })
 
   app.get('/sync-scores', async (request, reply) => {
-    const authHeader = request.headers.authorization
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (!isAuthorized(request)) {
       return reply.status(401).send({ error: 'Unauthorized' })
     }
 
