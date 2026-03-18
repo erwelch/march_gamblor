@@ -20,6 +20,11 @@ await app.register(cors, {
   credentials: true,
 })
 
+// Health check
+app.get('/api/health', async (_request, reply) => {
+  return reply.send({ status: 'ok' })
+})
+
 // API routes
 await app.register(betsRoutes, { prefix: '/api' })
 await app.register(gamesRoutes, { prefix: '/api' })
