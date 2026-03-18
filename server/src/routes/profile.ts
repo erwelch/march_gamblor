@@ -9,7 +9,7 @@ export async function profileRoutes(app: FastifyInstance) {
 
     let { data: profile } = await supabase
       .from('profiles')
-      .select('username, balance')
+      .select('username, balance, approved')
       .eq('id', user.id)
       .single()
 
@@ -18,10 +18,10 @@ export async function profileRoutes(app: FastifyInstance) {
       const serviceClient = createServiceClient()
       const { data: newProfile } = await serviceClient
         .from('profiles')
-        .upsert({ id: user.id, username, balance: 1000 }, { onConflict: 'id', ignoreDuplicates: true })
-        .select('username, balance')
+        .upsert({ id: user.id, username, balance: 1000, approved: false }, { onConflict: 'id', ignoreDuplicates: true })
+        .select('username, balance, approved')
         .single()
-      profile = newProfile ?? { username, balance: 1000 }
+      profile = newProfile ?? { username, balance: 1000, approved: false }
     }
 
     return reply.send({ profile })

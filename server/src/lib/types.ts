@@ -171,18 +171,21 @@ export type Database = {
       }
       profiles: {
         Row: {
+          approved: boolean
           balance: number
           created_at: string
           id: string
           username: string
         }
         Insert: {
+          approved?: boolean
           balance?: number
           created_at?: string
           id: string
           username: string
         }
         Update: {
+          approved?: boolean
           balance?: number
           created_at?: string
           id?: string

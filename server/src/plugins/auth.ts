@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
-import { createUserClient } from '../lib/supabase'
+import { createUserClient, createServiceClient } from '../lib/supabase'
 
 /**
  * Extract the Supabase access token from cookies or Authorization header.
@@ -45,4 +45,19 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
   // Attach to request for downstream use
   ;(request as any).user = user
   ;(request as any).supabase = supabase
+
+  // Skip approval check for the profile endpoint itself (needed to read approval status)
+  if (request.url === '/api/profile' && request.method === 'GET') return
+
+  // Block unapproved users from all other protected routes
+  const serviceClient = createServiceClient()
+  const { data: profile } = await serviceClient
+    .from('profiles')
+    .select('approved')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile?.approved) {
+    return reply.status(403).send({ error: 'Your account is pending admin approval.' })
+  }
 }
