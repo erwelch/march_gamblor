@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
 import fastifyStatic from '@fastify/static'
 import path from 'node:path'
+import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { betsRoutes } from './routes/bets'
 import { gamesRoutes } from './routes/games'
@@ -40,12 +41,14 @@ await app.register(fastifyStatic, {
   wildcard: false,
 })
 
-// SPA fallback: serve index.html for non-API routes
+// SPA fallback: serve index.html for all non-API routes
+const indexHtml = fs.readFileSync(path.join(clientDist, 'index.html'))
+
 app.setNotFoundHandler((request, reply) => {
   if (request.url.startsWith('/api/')) {
     return reply.status(404).send({ error: 'Not found' })
   }
-  return reply.sendFile('index.html')
+  return reply.type('text/html').send(indexHtml)
 })
 
 const port = parseInt(process.env.PORT ?? '3000', 10)

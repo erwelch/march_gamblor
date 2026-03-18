@@ -15,6 +15,12 @@ RUN npm install --prefix client && npm install --prefix server
 COPY client/ client/
 COPY server/ server/
 
+# Declare build args for Vite (must be passed at build time)
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+
 # Build client (vite) and server (tsc)
 RUN npm run build --prefix client && npm run build --prefix server
 
