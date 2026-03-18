@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify'
+import type { FastifyInstance } from 'fastify'
 import { syncOdds2 as syncOdds } from '../lib/syncOdds2'
 import { createServiceClient } from '../lib/supabase'
 import { calculatePayout } from '../lib/odds'
@@ -19,17 +19,9 @@ async function fetchScoresForDate(dateStr: string): Promise<NcaaGame[]> {
   return (data.games ?? []).map((e: { game: NcaaGame }) => e.game)
 }
 
-const INTERNAL_HOST = 'marchgamblor.railway.internal'
-
-function isAuthorized(request: FastifyRequest): boolean {
-  const host = request.headers.host?.split(':')[0]
-  if (host === INTERNAL_HOST) return true
-  return request.headers.authorization === `Bearer ${process.env.CRON_SECRET}`
-}
-
 export async function cronRoutes(app: FastifyInstance) {
   app.get('/sync-odds', async (request, reply) => {
-    if (!isAuthorized(request)) {
+    if (request.headers['x-cron-api-key'] !== process.env.CRON_API_KEY) {
       return reply.status(401).send({ error: 'Unauthorized' })
     }
 
@@ -40,7 +32,7 @@ export async function cronRoutes(app: FastifyInstance) {
   })
 
   app.get('/sync-scores', async (request, reply) => {
-    if (!isAuthorized(request)) {
+    if (request.headers['x-cron-api-key'] !== process.env.CRON_API_KEY) {
       return reply.status(401).send({ error: 'Unauthorized' })
     }
 
