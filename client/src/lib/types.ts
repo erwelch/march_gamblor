@@ -33,3 +33,23 @@ export type ProfileRow = {
   username: string
   balance: number
 }
+
+export type BetWithGame = {
+  id: string
+  game_id: string
+  market: 'h2h' | 'spreads' | 'totals'
+  pick: 'home' | 'away' | 'over' | 'under'
+  amount: number
+  odds_at_place: number
+  result: 'win' | 'loss' | 'push' | null
+  payout: number | null
+  placed_at: string
+  games: {
+    home_team: string
+    away_team: string
+    status: 'scheduled' | 'live' | 'final'
+    home_score: number | null
+    away_score: number | null
+  }
+}
+

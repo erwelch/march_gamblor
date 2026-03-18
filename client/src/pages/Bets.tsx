@@ -1,34 +1,14 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { calculatePayout, formatOdds } from '../lib/odds'
-
-type BetWithGame = {
-  id: string
-  game_id: string
-  market: 'h2h' | 'spreads' | 'totals'
-  pick: 'home' | 'away' | 'over' | 'under'
-  amount: number
-  odds_at_place: number
-  result: 'pending' | 'won' | 'lost' | null
-  created_at: string
-  games: {
-    home_team: string
-    away_team: string
-    status: 'scheduled' | 'live' | 'final'
-    home_score: number | null
-    away_score: number | null
-  }
-}
-
-function marketLabel(market: BetWithGame['market'], pick: BetWithGame['pick'], game: BetWithGame['games']) {
-  if (market === 'h2h') return pick === 'home' ? game.home_team : game.away_team
-  if (market === 'spreads') return `${pick === 'home' ? game.home_team : game.away_team} (spread)`
-  return pick === 'over' ? 'Over' : 'Under'
-}
+import type { BetWithGame } from '../lib/types'
+import { marketLabel, resultBadge } from '../lib/bets'
 
 function statusBadge(bet: BetWithGame) {
-  if (bet.result === 'won') return <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-xs text-green-400">Won</span>
-  if (bet.result === 'lost') return <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-xs text-red-400">Lost</span>
+  if (bet.result !== null) {
+    const { label, className } = resultBadge(bet.result)
+    return <span className={`rounded-full px-2 py-0.5 text-xs ${className}`}>{label}</span>
+  }
   if (bet.games.status === 'live') return <span className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs text-yellow-400">Live</span>
   return <span className="rounded-full bg-gray-700 px-2 py-0.5 text-xs text-gray-400">Pending</span>
 }
