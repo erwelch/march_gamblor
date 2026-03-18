@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import { requireAuth } from '../plugins/auth.js'
-import { createServiceClient } from '../lib/supabase.js'
+import { requireAuth } from '../plugins/auth'
+import { createServiceClient } from '../lib/supabase'
 
 export async function profileRoutes(app: FastifyInstance) {
   app.get('/profile', { preHandler: requireAuth }, async (request, reply) => {

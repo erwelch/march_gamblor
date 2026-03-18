@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { requireAuth } from '../plugins/auth.js'
+import { requireAuth } from '../plugins/auth'
 
 export async function gamesRoutes(app: FastifyInstance) {
   app.get('/games', { preHandler: requireAuth }, async (request, reply) => {

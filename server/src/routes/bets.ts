@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
-import { requireAuth } from '../plugins/auth.js'
-import { calculatePayout } from '../lib/odds.js'
-import type { Database } from '../lib/types.js'
+import { requireAuth } from '../plugins/auth'
+import { calculatePayout } from '../lib/odds'
+import type { Database } from '../lib/types'
 
 type BetInsert = Database['public']['Tables']['bets']['Insert']
 

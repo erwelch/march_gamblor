@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
-import { createUserClient } from '../lib/supabase.js'
+import { createUserClient } from '../lib/supabase'
 
 /**
  * Extract the Supabase access token from cookies or Authorization header.
