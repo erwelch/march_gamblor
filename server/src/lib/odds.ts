@@ -17,57 +17,58 @@ export function formatSpread(spread: number | null | undefined): string {
   return spread >= 0 ? `+${spread}` : `${spread}`
 }
 
-export function parseEventOdds(eventOdds: any, bookmakerName: string) {
-  // eventOdds is HistoricalEventOdds: { id, home, away, date, bookmakers: Record<string, Array<{name, odds[]}>> }
-  const bookmakerMarkets: Array<{ name: string; odds: any[] }> =
-    eventOdds?.bookmakers?.[bookmakerName]
-  if (!bookmakerMarkets || bookmakerMarkets.length === 0) return null
+// odds keyed by oddID as returned by the SportsGameOdds SDK (event.odds)
+type ByBookmakerEntry = {
+  odds?: string | null
+  spread?: string | null
+  overUnder?: string | null
+  available?: boolean
+}
+type OddEntry = {
+  bookOdds?: string | null
+  bookSpread?: string | null
+  bookOverUnder?: string | null
+  byBookmaker?: Record<string, ByBookmakerEntry>
+}
+type EventOddsMap = Record<string, OddEntry>
 
-  let home_ml: number | null = null
-  let away_ml: number | null = null
-  let home_spread: number | null = null
-  let home_spread_price: number | null = null
-  let away_spread_price: number | null = null
-  let over_under: number | null = null
-  let over_price: number | null = null
-  let under_price: number | null = null
+function parseNum(val: string | null | undefined): number | null {
+  if (val == null || val === '') return null
+  const n = parseFloat(val)
+  return isNaN(n) ? null : n
+}
 
-  for (const market of bookmakerMarkets) {
-    if (market.name === 'ML') {
-      const line = market.odds?.[0]
-      if (line) {
-        home_ml = line.home != null ? parseFloat(line.home) : null
-        away_ml = line.away != null ? parseFloat(line.away) : null
-      }
-    } else if (market.name === 'Spread') {
-      // Pick the main line: the hdp entry whose absolute value is smallest
-      const lines: Array<{ hdp: number; home: string; away: string }> = market.odds ?? []
-      if (lines.length > 0) {
-        const main = lines.reduce((best, cur) =>
-          Math.abs(cur.hdp) < Math.abs(best.hdp) ? cur : best
-        )
-        home_spread = main.hdp
-        home_spread_price = main.home != null ? parseFloat(main.home) : null
-        away_spread_price = main.away != null ? parseFloat(main.away) : null
-      }
-    } else if (market.name === 'Totals') {
-      // Pick the most balanced line: hdp where |over - under| is smallest
-      const lines: Array<{ hdp: number; over: string; under: string }> = market.odds ?? []
-      if (lines.length > 0) {
-        const main = lines.reduce((best, cur) => {
-          const curDiff = Math.abs(parseFloat(cur.over) - parseFloat(cur.under))
-          const bestDiff = Math.abs(parseFloat(best.over) - parseFloat(best.under))
-          return curDiff < bestDiff ? cur : best
-        })
-        over_under = main.hdp
-        over_price = main.over != null ? parseFloat(main.over) : null
-        under_price = main.under != null ? parseFloat(main.under) : null
-      }
-    }
-  }
+function getOdds(entry: OddEntry | undefined, bookmakerID: string, field: 'odds' | 'spread' | 'overUnder'): string | null | undefined {
+  const bk = entry?.byBookmaker?.[bookmakerID]
+  if (bk?.available !== false && bk?.[field] != null) return bk[field]
+  // fall back to consensus
+  if (field === 'odds') return entry?.bookOdds
+  if (field === 'spread') return entry?.bookSpread
+  if (field === 'overUnder') return entry?.bookOverUnder
+  return null
+}
+
+export function parseEventOdds(eventOdds: EventOddsMap, bookmakerID: string) {
+  if (!eventOdds) return null
+
+  const homeML = eventOdds['points-home-game-ml-home']
+  const awayML = eventOdds['points-away-game-ml-away']
+  const homeSP = eventOdds['points-home-game-sp-home']
+  const awaySP = eventOdds['points-away-game-sp-away']
+  const over   = eventOdds['points-all-game-ou-over']
+  const under  = eventOdds['points-all-game-ou-under']
+
+  const home_ml            = parseNum(getOdds(homeML, bookmakerID, 'odds'))
+  const away_ml            = parseNum(getOdds(awayML, bookmakerID, 'odds'))
+  const home_spread        = parseNum(getOdds(homeSP, bookmakerID, 'spread'))
+  const home_spread_price  = parseNum(getOdds(homeSP, bookmakerID, 'odds'))
+  const away_spread_price  = parseNum(getOdds(awaySP, bookmakerID, 'odds'))
+  const over_under         = parseNum(getOdds(over,   bookmakerID, 'overUnder'))
+  const over_price         = parseNum(getOdds(over,   bookmakerID, 'odds'))
+  const under_price        = parseNum(getOdds(under,  bookmakerID, 'odds'))
 
   return {
-    bookmaker: bookmakerName,
+    bookmaker: bookmakerID,
     home_ml, away_ml,
     home_spread, home_spread_price, away_spread_price,
     over_under, over_price, under_price,

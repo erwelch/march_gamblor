@@ -1,15 +1,16 @@
 import type { FastifyInstance } from 'fastify'
 import { requireAuth } from '../plugins/auth.js'
-import { syncOdds } from '../lib/syncOdds.js'
+import { syncOdds2 as syncOdds } from '../lib/syncOdds2.js'
 
 export async function gamesRoutes(app: FastifyInstance) {
   app.get('/games', { preHandler: requireAuth }, async (request, reply) => {
     const user = (request as any).user
     const supabase = (request as any).supabase
 
-    // Sync latest odds
-    const syncResult = await syncOdds().catch((e: unknown) => ({ error: String(e), upserted: 0, total: 0 }))
-    console.log('[syncOdds]', syncResult)
+    // Sync latest odds in the background so we can return DB data immediately
+    syncOdds()
+      .then((r: any) => console.log('[syncOdds]', r))
+      .catch((e: unknown) => console.error('[syncOdds error]', String(e)))
 
     const { data: rawGames } = await supabase
       .from('games')

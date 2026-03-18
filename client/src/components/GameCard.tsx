@@ -120,6 +120,12 @@ export default function GameCard({ game, bettedKeys, onBetPlaced }: GameCardProp
         {isLocked && game.status !== 'final' && (
           <p className="text-center text-xs text-gray-600">Betting locked</p>
         )}
+
+        {o?.fetched_at && (
+          <p className="text-right text-xs text-gray-600">
+            Odds updated {format(new Date(o.fetched_at), 'h:mm a')}
+          </p>
+        )}
       </div>
 
       {betModal && (
