@@ -116,7 +116,7 @@ export async function syncOdds2() {
       const { error: oddsError } = await supabase
         .from('odds')
         .upsert(
-          { game_id: game.id, ...parsed },
+          { game_id: game.id, ...parsed, fetched_at: new Date().toISOString() },
           { onConflict: 'game_id,bookmaker' }
         )
 
