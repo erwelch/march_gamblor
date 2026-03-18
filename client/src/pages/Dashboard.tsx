@@ -3,6 +3,8 @@ import { apiFetch } from '../lib/api'
 import type { GameWithOdds } from '../lib/types'
 import GameCard from '../components/GameCard'
 
+const SYNC_DELAY_MS = 8_000 // re-fetch after background sync likely finishes
+
 export default function DashboardPage() {
   const [games, setGames] = useState<GameWithOdds[]>([])
   const [bettedKeys, setBettedKeys] = useState<string[]>([])
@@ -20,21 +22,22 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadGames()
+    // After the server's background sync finishes, quietly refresh to pick up new odds
+    const timer = setTimeout(loadGames, SYNC_DELAY_MS)
+    return () => clearTimeout(timer)
   }, [loadGames])
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16 text-gray-500">
-        Loading games…
-      </div>
-    )
-  }
 
   return (
     <div>
       <h2 className="mb-6 text-xl font-semibold text-gray-100">Upcoming &amp; Live Games</h2>
 
-      {games.length === 0 ? (
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-48 animate-pulse rounded-xl bg-gray-800" />
+          ))}
+        </div>
+      ) : games.length === 0 ? (
         <div className="rounded-xl bg-gray-900 p-8 text-center text-gray-500">
           No games available right now. Odds sync every 30 minutes during the tournament.
         </div>

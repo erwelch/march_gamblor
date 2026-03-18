@@ -23,7 +23,7 @@ export type OddsRow = {
   over_under: number | null
   over_price: number | null
   under_price: number | null
-  fetched_at: string
+  fetched_at: string | null
 }
 
 export type GameWithOdds = GameRow & { odds: OddsRow | null }

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { syncOdds } from '../lib/syncOdds'
+import { syncOdds2 as syncOdds } from '../lib/syncOdds2'
 import { createServiceClient } from '../lib/supabase'
 import { calculatePayout } from '../lib/odds'
 
