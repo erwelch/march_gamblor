@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",
-    "build": "tsc",
+    "build": "tsc && tsc-esm-fix --tsconfig=tsconfig.json",
     "start": "node --env-file=.env dist/index.js",
     "gen-types": "bash -c \"npx supabase gen types typescript --project-id xjnjtqlhdqnsgilukabt --schema public > src/lib/types.ts\""
   },
@@ -21,6 +21,7 @@
   "devDependencies": {
     "@types/node": "^20",
     "supabase": "^2.81.1",
+    "tsc-esm-fix": "^2.20.22",
     "tsx": "^4.19.4",
     "typescript": "^5"
   }
