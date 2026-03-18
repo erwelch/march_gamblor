@@ -21,18 +21,27 @@ async function fetchScoresForDate(dateStr: string): Promise<NcaaGame[]> {
 
 export async function cronRoutes(app: FastifyInstance) {
   app.get('/sync-odds', async (request, reply) => {
+    console.log(`[cron/sync-odds] Request received from ${request.ip}`)
     if (request.headers['x-cron-api-key'] !== process.env.CRON_API_KEY) {
+      console.warn('[cron/sync-odds] Unauthorized request - invalid or missing x-cron-api-key')
       return reply.status(401).send({ error: 'Unauthorized' })
     }
 
+    console.log('[cron/sync-odds] Starting odds sync...')
     const result = await syncOdds()
-    if (result.error) return reply.status(502).send({ error: result.error })
+    if (result.error) {
+      console.error('[cron/sync-odds] Sync failed:', result.error)
+      return reply.status(502).send({ error: result.error })
+    }
 
+    console.log(`[cron/sync-odds] Done. upserted=${result.upserted} total=${result.total}`)
     return reply.send({ ok: true, upserted: result.upserted, total: result.total })
   })
 
   app.get('/sync-scores', async (request, reply) => {
+    console.log(`[cron/sync-scores] Request received from ${request.ip}`)
     if (request.headers['x-cron-api-key'] !== process.env.CRON_API_KEY) {
+      console.warn('[cron/sync-scores] Unauthorized request - invalid or missing x-cron-api-key')
       return reply.status(401).send({ error: 'Unauthorized' })
     }
 

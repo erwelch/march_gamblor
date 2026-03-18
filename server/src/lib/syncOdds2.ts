@@ -52,9 +52,11 @@ function parseEventOdds2(eventOdds: Record<string, any>, bookmakerID: string) {
 }
 
 export async function syncOdds2() {
+  console.log('[syncOdds2] Starting...')
   const client = new SportsGameOdds({
     apiKeyHeader: process.env.SPORTS_ODDS_API_KEY_HEADER,
   })
+  console.log('[syncOdds2] API key present:', !!process.env.SPORTS_ODDS_API_KEY_HEADER)
 
   const supabase = createServiceClient()
   let upserted = 0
@@ -62,6 +64,7 @@ export async function syncOdds2() {
 
   try {
     const startsAfter = new Date('2026-03-16T00:00:00.000Z').toISOString()
+    console.log(`[syncOdds2] Fetching events startsAfter=${startsAfter}`)
 
     for await (const event of client.events.get({
       sportID: 'BASKETBALL',
@@ -75,12 +78,14 @@ export async function syncOdds2() {
       limit: 15,
     })) {
       total++
+      console.log(`[syncOdds2] Processing event #${total} eventID=${event.eventID ?? '(none)'}`)
 
       if (!event.eventID) continue
 
       const homeTeam = event.teams?.home?.names?.long ?? event.teams?.home?.names?.medium ?? ''
       const awayTeam = event.teams?.away?.names?.long ?? event.teams?.away?.names?.medium ?? ''
       const startTime = event.status?.startsAt
+      console.log(`[syncOdds2] Event: ${awayTeam} @ ${homeTeam}, startsAt=${startTime}`)
 
       if (!startTime) {
         console.warn(`[syncOdds2] Skipping event ${event.eventID}: no startsAt`)
@@ -124,8 +129,10 @@ export async function syncOdds2() {
       upserted++
     }
   } catch (err: any) {
+    console.error('[syncOdds2] Fatal error:', err?.message ?? err)
     return { upserted, total, error: `Failed to fetch events: ${err?.message ?? err}` }
   }
 
+  console.log(`[syncOdds2] Finished. upserted=${upserted} total=${total}`)
   return { upserted, total }
 }
