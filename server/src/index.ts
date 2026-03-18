@@ -10,7 +10,7 @@ import { leaderboardRoutes } from './routes/leaderboard'
 import { profileRoutes } from './routes/profile'
 import { cronRoutes } from './routes/cron'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __dirname = import.meta.dirname
 
 const app = Fastify({ logger: true })
 
