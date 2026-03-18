@@ -74,7 +74,7 @@ export async function syncOdds2() {
       bookmakerID: BOOKMAKER,
       oddID: ODD_IDS,
       startsAfter,
-      limit: 15,
+      limit: 50,
     })) {
       total++
       console.log(`[syncOdds2] Processing event #${total} eventID=${event.eventID ?? '(none)'}`)
