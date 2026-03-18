@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { apiFetch } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import type { ProfileRow, BetWithGame } from '../lib/types'
 import { marketLabel, resultBadge } from '../lib/bets'
 import { formatOdds } from '../lib/odds'
+import { useSSE } from '../lib/useSSE'
 
 export default function LeaderboardPage() {
   const [profiles, setProfiles] = useState<ProfileRow[]>([])
@@ -12,22 +13,42 @@ export default function LeaderboardPage() {
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [userBets, setUserBets] = useState<Record<string, BetWithGame[]>>({})
   const [loadingBetsFor, setLoadingBetsFor] = useState<string | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const loadLeaderboard = useCallback(async () => {
+    const [{ data: { user } }, res] = await Promise.all([
+      supabase.auth.getUser(),
+      apiFetch('/api/leaderboard'),
+    ])
+    setCurrentUserId(user?.id ?? null)
+    if (res.ok) {
+      const data = await res.json()
+      const incoming: ProfileRow[] = data.profiles ?? []
+      setProfiles(prev => {
+        if (prev.length !== incoming.length) return incoming
+        const same = prev.every((p, i) => p.id === incoming[i].id && p.balance === incoming[i].balance && p.username === incoming[i].username)
+        return same ? prev : incoming
+      })
+    }
+    setLoading(false)
+  }, [])
 
   useEffect(() => {
-    async function load() {
-      const [{ data: { user } }, res] = await Promise.all([
-        supabase.auth.getUser(),
-        apiFetch('/api/leaderboard'),
-      ])
-      setCurrentUserId(user?.id ?? null)
-      if (res.ok) {
-        const data = await res.json()
-        setProfiles(data.profiles ?? [])
-      }
-      setLoading(false)
-    }
-    load()
-  }, [])
+    loadLeaderboard()
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [loadLeaderboard])
+
+  // When bets settle, the leaderboard rankings change — refresh automatically
+  useSSE({
+    'scores-updated': () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        loadLeaderboard()
+        // Clear cached bets for expanded users so they get fresh data too
+        setUserBets({})
+      }, 300)
+    },
+  })
 
   async function toggleUser(userId: string) {
     if (expandedUserId === userId) {

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { syncOdds2 as syncOdds } from '../lib/syncOdds2'
 import { createServiceClient } from '../lib/supabase'
 import { calculatePayout } from '../lib/odds'
+import { broadcast } from '../lib/broadcaster'
 
 interface NcaaGame {
   gameID: string
@@ -35,6 +36,9 @@ export async function cronRoutes(app: FastifyInstance) {
     }
 
     console.log(`[cron/sync-odds] Done. upserted=${result.upserted} total=${result.total}`)
+    if (result.upserted > 0) {
+      broadcast('odds-updated', { upserted: result.upserted })
+    }
     return reply.send({ ok: true, upserted: result.upserted, total: result.total })
   })
 
@@ -143,6 +147,9 @@ export async function cronRoutes(app: FastifyInstance) {
       }
     }
 
+    if (updated > 0) {
+      broadcast('scores-updated', { updated, settled })
+    }
     return reply.send({ ok: true, updated, settled })
   })
 }

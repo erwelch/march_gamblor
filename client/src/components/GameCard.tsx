@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { format } from 'date-fns'
 import type { GameWithOdds } from '../lib/types'
 import { formatOdds, formatSpread } from '../lib/odds'
@@ -16,7 +16,7 @@ const STATUS_BADGE: Record<string, string> = {
   final: 'bg-gray-700/50 text-gray-500 ring-gray-600/30',
 }
 
-export default function GameCard({ game, bettedKeys, onBetPlaced }: GameCardProps) {
+function GameCard({ game, bettedKeys, onBetPlaced }: GameCardProps) {
   const [betModal, setBetModal] = useState<{ market: 'h2h' | 'spreads' | 'totals'; pick: 'home' | 'away' | 'over' | 'under'; odds: number } | null>(null)
   const bettedSet = new Set(bettedKeys)
   const hasExistingBet = (market: string) => bettedSet.has(`${game.id}:${market}`)
@@ -141,6 +141,8 @@ export default function GameCard({ game, bettedKeys, onBetPlaced }: GameCardProp
     </>
   )
 }
+
+export default memo(GameCard)
 
 function TeamRow({ name, score, isFinal, won }: { name: string; score: number | null; isFinal: boolean; won: boolean }) {
   return (

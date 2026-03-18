@@ -1,31 +1,59 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { apiFetch } from '../lib/api'
 import type { GameWithOdds } from '../lib/types'
 import GameCard from '../components/GameCard'
-
-const SYNC_DELAY_MS = 8_000 // re-fetch after background sync likely finishes
+import { useSSE } from '../lib/useSSE'
 
 export default function DashboardPage() {
   const [games, setGames] = useState<GameWithOdds[]>([])
   const [bettedKeys, setBettedKeys] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadGames = useCallback(async () => {
     const res = await apiFetch('/api/games')
     if (res.ok) {
       const data = await res.json()
-      setGames(data.games ?? [])
+      const incoming: GameWithOdds[] = data.games ?? []
+      setGames(prev => {
+        const prevMap = new Map(prev.map(g => [g.id, g]))
+        let changed = incoming.length !== prev.length
+        const next = incoming.map(g => {
+          const old = prevMap.get(g.id)
+          if (!old) { changed = true; return g }
+          const same =
+            old.home_score === g.home_score &&
+            old.away_score === g.away_score &&
+            old.status === g.status &&
+            old.odds?.home_ml === g.odds?.home_ml &&
+            old.odds?.away_ml === g.odds?.away_ml &&
+            old.odds?.home_spread === g.odds?.home_spread &&
+            old.odds?.over_under === g.odds?.over_under &&
+            old.odds?.fetched_at === g.odds?.fetched_at
+          if (!same) changed = true
+          return same ? old : g
+        })
+        return changed ? next : prev
+      })
       setBettedKeys(data.bettedKeys ?? [])
     }
     setLoading(false)
   }, [])
 
+  const debouncedLoad = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => loadGames(), 300)
+  }, [loadGames])
+
   useEffect(() => {
     loadGames()
-    // After the server's background sync finishes, quietly refresh to pick up new odds
-    const timer = setTimeout(loadGames, SYNC_DELAY_MS)
-    return () => clearTimeout(timer)
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [loadGames])
+
+  useSSE({
+    'scores-updated': debouncedLoad,
+    'odds-updated': debouncedLoad,
+  })
 
   return (
     <div>

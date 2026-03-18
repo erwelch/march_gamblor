@@ -12,6 +12,12 @@ function extractAccessToken(request: FastifyRequest): string | null {
     return authHeader.slice(7)
   }
 
+  // Check query param (used by EventSource which cannot send custom headers)
+  const query = request.query as Record<string, string>
+  if (typeof query?.token === 'string' && query.token.length > 0) {
+    return query.token
+  }
+
   // Check cookies for Supabase auth token
   const cookies = request.cookies
   for (const [name, value] of Object.entries(cookies)) {

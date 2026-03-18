@@ -10,6 +10,7 @@ import { gamesRoutes } from './routes/games'
 import { leaderboardRoutes } from './routes/leaderboard'
 import { profileRoutes } from './routes/profile'
 import { cronRoutes } from './routes/cron'
+import { eventsRoute } from './routes/events'
 
 const __dirname = import.meta.dirname
 
@@ -32,6 +33,7 @@ await app.register(gamesRoutes, { prefix: '/api' })
 await app.register(leaderboardRoutes, { prefix: '/api' })
 await app.register(profileRoutes, { prefix: '/api' })
 await app.register(cronRoutes, { prefix: '/api/cron' })
+await app.register(eventsRoute, { prefix: '/api' })
 
 // Serve built client in production
 const clientDist = path.join(__dirname, '../../client/dist')
