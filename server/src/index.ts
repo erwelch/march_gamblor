@@ -49,10 +49,11 @@ app.setNotFoundHandler((request, reply) => {
 })
 
 const port = parseInt(process.env.PORT ?? '3000', 10)
+const host = process.env.HOST ?? '0.0.0.0'
 
 try {
-  await app.listen({ port, host: '0.0.0.0' })
-  console.log(`Server running on http://localhost:${port}`)
+  await app.listen({ port, host })
+  console.log(`Server running on ${port}`)
 } catch (err) {
   app.log.error(err)
   process.exit(1)
