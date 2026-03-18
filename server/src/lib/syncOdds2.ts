@@ -69,7 +69,6 @@ export async function syncOdds2() {
     for await (const event of client.events.get({
       sportID: 'BASKETBALL',
       leagueID: 'NCAAB',
-      type: 'tournament',
       ended: false,
       oddsAvailable: true,
       bookmakerID: BOOKMAKER,
