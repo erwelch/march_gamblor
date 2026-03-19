@@ -94,6 +94,11 @@ async function processPage(
 
     console.log(`[syncOdds2] Processing ${awayTeam} @ ${homeTeam}, startsAt=${startTime}`)
 
+    // Compute game_date in US Eastern time (ET = UTC-5 standard, UTC-4 daylight)
+    // Use Intl.DateTimeFormat to get the correct local date for the event
+    const startDate = new Date(startTime)
+    const etDateStr = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) // en-CA gives YYYY-MM-DD
+
     const { data: game, error: gameError } = await supabase
       .from('games')
       .upsert(
@@ -102,7 +107,7 @@ async function processPage(
           home_team: homeTeam,
           away_team: awayTeam,
           start_time: startTime,
-          game_date: startTime.substring(0, 10),
+          game_date: etDateStr,
         },
         { onConflict: 'ncaa_game_id', ignoreDuplicates: false }
       )

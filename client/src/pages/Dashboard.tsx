@@ -93,7 +93,8 @@ export default function DashboardPage() {
                 <div className="absolute top-full left-0 z-10 mt-1 w-48 rounded-lg bg-gray-800 ring-1 ring-gray-700">
                   <div className="p-2">
                     {uniqueDates.map(date => {
-                      const dateObj = new Date(date)
+                      const [y, m, d] = date.split('-').map(Number)
+                      const dateObj = new Date(y, m - 1, d)
                       const label = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' })
                       const isSelected = selectedDates.includes(date)
                       return (

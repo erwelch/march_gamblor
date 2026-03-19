@@ -9,7 +9,7 @@ export async function gamesRoutes(app: FastifyInstance) {
     const { data: rawGames } = await supabase
       .from('games')
       .select('*, odds(*)')
-      .in('status', ['scheduled', 'live'])
+      .in('status', ['scheduled', 'live', 'final'])
       .order('start_time', { ascending: true })
       .limit(50)
 

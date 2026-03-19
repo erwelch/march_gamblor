@@ -93,9 +93,12 @@ export async function cronRoutes(app: FastifyInstance) {
     const now = new Date()
     const yesterday = new Date(now)
     yesterday.setUTCDate(now.getUTCDate() - 1)
+    const tomorrow = new Date(now)
+    tomorrow.setUTCDate(now.getUTCDate() + 1)
 
     const todayIso = toIsoDate(now)
     const yesterdayIso = toIsoDate(yesterday)
+    const tomorrowIso = toIsoDate(tomorrow)
 
     // Fetch NCAA scoreboards for today and yesterday in parallel
     let ncaaGamesToday: NcaaGame[]
@@ -118,11 +121,11 @@ export async function cronRoutes(app: FastifyInstance) {
 
     console.log(`[cron/sync-scores] Fetched ${allNcaaGames.length} live/final NCAA games`)
 
-    // Fetch DB games for today and yesterday that may need updating
+    // Fetch DB games for today, yesterday, and tomorrow (game_date is stored in ET, filter by it)
     const { data: dbGames } = await supabase
       .from('games')
       .select('*')
-      .in('game_date', [todayIso, yesterdayIso])
+      .in('game_date', [yesterdayIso, todayIso, tomorrowIso])
       .in('status', ['scheduled', 'live'])
 
     if (!dbGames?.length) {
@@ -134,7 +137,7 @@ export async function cronRoutes(app: FastifyInstance) {
     const { data: finalDbGames } = await supabase
       .from('games')
       .select('*')
-      .in('game_date', [todayIso, yesterdayIso])
+      .in('game_date', [yesterdayIso, todayIso, tomorrowIso])
       .eq('status', 'final')
 
     const allDbGames = [...(dbGames ?? []), ...(finalDbGames ?? [])]
