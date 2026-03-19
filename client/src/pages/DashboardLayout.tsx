@@ -1,14 +1,20 @@
 import { Outlet } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
+import { supabase } from '../lib/supabase'
 import NavBar from '../components/NavBar'
 import { useSSE } from '../lib/useSSE'
 
 export default function DashboardLayout() {
   const [username, setUsername] = useState('')
   const [balance, setBalance] = useState(0)
+  const currentUserIdRef = useRef<string | null>(null)
 
   useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      currentUserIdRef.current = data.session?.user?.id ?? null
+    })
+
     apiFetch('/api/profile')
       .then(res => res.json())
       .then(data => {
@@ -22,8 +28,10 @@ export default function DashboardLayout() {
 
   useSSE({
     'balance-updated': (data) => {
-      const { balance } = data as { userId: string; balance: number }
-      setBalance(balance)
+      const { userId, balance } = data as { userId: string; balance: number }
+      if (userId === currentUserIdRef.current) {
+        setBalance(balance)
+      }
     },
   })
 
