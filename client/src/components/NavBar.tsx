@@ -30,19 +30,24 @@ export default function NavBar({ username, balance, onBalanceChange }: NavBarPro
       return
     }
     setDepositing(true)
-    const res = await apiFetch('/api/profile/balance', {
-      method: 'PATCH',
-      body: JSON.stringify({ amount }),
-    })
-    setDepositing(false)
-    if (res.ok) {
-      const data = await res.json()
-      onBalanceChange?.(data.balance)
-      setDepositAmount('')
-      setDepositOpen(false)
-    } else {
-      const err = await res.json().catch(() => ({}))
-      setDepositError(err.error ?? 'Failed to add credits.')
+    try {
+      const res = await apiFetch('/api/profile/balance', {
+        method: 'PATCH',
+        body: JSON.stringify({ amount }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        onBalanceChange?.(data.balance)
+        setDepositAmount('')
+        setDepositOpen(false)
+      } else {
+        const err = await res.json().catch(() => ({}))
+        setDepositError(err.error ?? 'Failed to add credits.')
+      }
+    } catch {
+      setDepositError('Network error. Please try again.')
+    } finally {
+      setDepositing(false)
     }
   }
 

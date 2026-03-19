@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { requireAuth } from '../plugins/auth'
 import { calculatePayout } from '../lib/odds'
+import { createServiceClient } from '../lib/supabase'
 import type { Database } from '../lib/types'
 
 type BetInsert = Database['public']['Tables']['bets']['Insert']
@@ -95,6 +96,17 @@ export async function betsRoutes(app: FastifyInstance) {
       return reply.status(409).send({ error: 'Insufficient balance' })
     }
 
+    const serviceClient = createServiceClient()
+    const { error: deductError } = await serviceClient
+      .from('profiles')
+      .update({ balance: profile.balance - amount })
+      .eq('id', user.id)
+
+    if (deductError) {
+      console.error('Balance deduction error:', deductError)
+      return reply.status(500).send({ error: 'Failed to deduct balance' })
+    }
+
     const { data: bet, error: betError } = await supabase
       .from('bets')
       .insert({ user_id: user.id, game_id, market, pick, amount, odds_at_place })
@@ -103,6 +115,11 @@ export async function betsRoutes(app: FastifyInstance) {
 
     if (betError) {
       console.error('Bet insert error:', betError)
+      // Refund the deducted amount if bet insert fails
+      await serviceClient
+        .from('profiles')
+        .update({ balance: profile.balance })
+        .eq('id', user.id)
       return reply.status(500).send({ error: 'Failed to place bet' })
     }
 

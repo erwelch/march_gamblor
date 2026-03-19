@@ -38,7 +38,7 @@ export default function LeaderboardPage() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [loadLeaderboard])
 
-  // When bets settle, the leaderboard rankings change — refresh automatically
+  // When bets settle or balances change, the leaderboard rankings change — refresh automatically
   useSSE({
     'scores-updated': () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -46,6 +46,12 @@ export default function LeaderboardPage() {
         loadLeaderboard()
         // Clear cached bets for expanded users so they get fresh data too
         setUserBets({})
+      }, 300)
+    },
+    'balance-updated': () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        loadLeaderboard()
       }, 300)
     },
   })

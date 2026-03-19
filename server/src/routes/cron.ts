@@ -139,6 +139,18 @@ export async function cronRoutes(app: FastifyInstance) {
             .update({ result, payout, settled_at: new Date().toISOString() })
             .eq('id', bet.id)
 
+          if (result === 'win') {
+            const { data: profile } = await supabase.from('profiles').select('balance').eq('id', bet.user_id).single()
+            if (profile) {
+              await supabase.from('profiles').update({ balance: profile.balance + payout }).eq('id', bet.user_id)
+            }
+          } else if (result === 'push') {
+            const { data: profile } = await supabase.from('profiles').select('balance').eq('id', bet.user_id).single()
+            if (profile) {
+              await supabase.from('profiles').update({ balance: profile.balance + bet.amount }).eq('id', bet.user_id)
+            }
+          }
+
           settled++
         }
       }

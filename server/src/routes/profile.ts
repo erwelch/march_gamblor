@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { requireAuth } from '../plugins/auth'
 import { createServiceClient } from '../lib/supabase'
+import { broadcast } from '../lib/broadcaster'
 
 export async function profileRoutes(app: FastifyInstance) {
   app.get('/profile', { preHandler: requireAuth }, async (request, reply) => {
@@ -58,6 +59,8 @@ export async function profileRoutes(app: FastifyInstance) {
     if (updateError || !updated) {
       return reply.status(500).send({ error: 'Failed to update balance.' })
     }
+
+    broadcast('balance-updated', { userId: user.id, balance: updated.balance })
 
     return reply.send({ balance: updated.balance })
   })
