@@ -1,6 +1,6 @@
 import { Outlet } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/api'
 import NavBar from '../components/NavBar'
 import { useSSE } from '../lib/useSSE'
 
@@ -9,22 +9,15 @@ export default function DashboardLayout() {
   const [balance, setBalance] = useState(0)
 
   useEffect(() => {
-    async function loadProfile() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('username, balance')
-        .eq('id', user.id)
-        .single()
-
-      if (profile) {
-        setUsername(profile.username)
-        setBalance(profile.balance)
-      }
-    }
-    loadProfile()
+    apiFetch('/api/profile')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.profile) {
+          setUsername(data.profile.username)
+          setBalance(data.profile.balance)
+        }
+      })
+      .catch(() => {})
   }, [])
 
   useSSE({
