@@ -10,6 +10,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [selectedDates, setSelectedDates] = useState<string[]>([])
   const [openDateDropdown, setOpenDateDropdown] = useState(false)
+  const [selectedStatuses, setSelectedStatuses] = useState<('scheduled' | 'live' | 'final')[]>(['live', 'scheduled'])
+  const [openStatusDropdown, setOpenStatusDropdown] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadGames = useCallback(async () => {
@@ -63,12 +65,14 @@ export default function DashboardPage() {
     return dates
   }, [games])
 
-  // Filter games based on selected dates
+  // Filter games based on selected dates and statuses
   const filteredGames = useMemo(() => {
     return games.filter(game => {
-      return selectedDates.length === 0 || selectedDates.includes(game.game_date)
+      const dateMatch = selectedDates.length === 0 || selectedDates.includes(game.game_date)
+      const statusMatch = selectedStatuses.includes(game.status)
+      return dateMatch && statusMatch
     })
-  }, [games, selectedDates])
+  }, [games, selectedDates, selectedStatuses])
 
   return (
     <div>
@@ -117,11 +121,47 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* Status Filter Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setOpenStatusDropdown(!openStatusDropdown)}
+              className="flex items-center gap-2 rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700"
+            >
+              <span>Status {selectedStatuses.length < 3 && `(${selectedStatuses.length})`}</span>
+              <svg className={`h-4 w-4 transition-transform ${openStatusDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+              </svg>
+            </button>
+            {openStatusDropdown && (
+              <div className="absolute top-full left-0 z-10 mt-1 w-40 rounded-lg bg-gray-800 ring-1 ring-gray-700">
+                <div className="p-2">
+                  {(['scheduled', 'live', 'final'] as const).map(status => {
+                    const isSelected = selectedStatuses.includes(status)
+                    return (
+                      <label key={status} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => setSelectedStatuses(prev =>
+                            isSelected ? prev.filter(s => s !== status) : [...prev, status]
+                          )}
+                          className="h-4 w-4 rounded border-gray-600 bg-gray-700 accent-blue-600"
+                        />
+                        <span className="text-sm text-gray-300 capitalize">{status}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Clear Filters */}
-          {selectedDates.length > 0 && (
+          {(selectedDates.length > 0 || selectedStatuses.length < 3) && (
             <button
               onClick={() => {
                 setSelectedDates([])
+                setSelectedStatuses(['live', 'scheduled'])
               }}
               className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700"
             >
