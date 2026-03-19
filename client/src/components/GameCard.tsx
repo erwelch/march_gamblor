@@ -43,14 +43,16 @@ function GameCard({ game, bettedKeys, onBetPlaced }: GameCardProps) {
           <TeamRow
             name={game.away_team}
             score={game.away_score}
-            isFinal={game.status === 'final'}
-            won={game.status === 'final' && (game.away_score ?? 0) > (game.home_score ?? 0)}
+            isLive={isLive}
+            isFinal={isFinal}
+            won={isFinal && (game.away_score ?? 0) > (game.home_score ?? 0)}
           />
           <TeamRow
             name={game.home_team}
             score={game.home_score}
-            isFinal={game.status === 'final'}
-            won={game.status === 'final' && (game.home_score ?? 0) > (game.away_score ?? 0)}
+            isLive={isLive}
+            isFinal={isFinal}
+            won={isFinal && (game.home_score ?? 0) > (game.away_score ?? 0)}
           />
         </div>
 
@@ -164,10 +166,13 @@ function GameCard({ game, bettedKeys, onBetPlaced }: GameCardProps) {
 
 export default memo(GameCard)
 
-function TeamRow({ name, score, isFinal, won }: { name: string; score: number | null; isFinal: boolean; won: boolean }) {
+function TeamRow({ name, score, isLive, isFinal, won }: { name: string; score: number | null; isLive: boolean; isFinal: boolean; won: boolean }) {
   return (
     <div className="flex items-center justify-between">
       <span className={`text-sm font-medium ${won ? 'text-white' : 'text-gray-300'}`}>{name}</span>
+      {isLive && score !== null && (
+        <span className="text-sm font-bold text-red-400">{score}</span>
+      )}
       {isFinal && score !== null && (
         <span className={`text-sm font-bold ${won ? 'text-white' : 'text-gray-500'}`}>{score}</span>
       )}
