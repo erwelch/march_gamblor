@@ -75,12 +75,15 @@ export async function betsRoutes(app: FastifyInstance) {
     if (!oddsRow) return reply.status(409).send({ error: 'No odds available for this game' })
 
     let odds_at_place: number | null = null
+    let line_at_place: number | null = null
     if (market === 'h2h') {
       odds_at_place = pick === 'home' ? oddsRow.home_ml : oddsRow.away_ml
     } else if (market === 'spreads') {
       odds_at_place = pick === 'home' ? oddsRow.home_spread_price : oddsRow.away_spread_price
+      line_at_place = oddsRow.home_spread
     } else if (market === 'totals') {
       odds_at_place = pick === 'over' ? oddsRow.over_price : oddsRow.under_price
+      line_at_place = oddsRow.over_under
     }
 
     if (odds_at_place === null) {
@@ -103,7 +106,7 @@ export async function betsRoutes(app: FastifyInstance) {
     // The DB trigger on bets INSERT atomically deducts profile.balance.
     const { data: bet, error: betError } = await supabase
       .from('bets')
-      .insert({ user_id: user.id, game_id, market, pick, amount, odds_at_place })
+      .insert({ user_id: user.id, game_id, market, pick, amount, odds_at_place, line_at_place })
       .select()
       .single()
 

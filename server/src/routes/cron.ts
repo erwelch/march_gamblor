@@ -229,12 +229,6 @@ export async function cronRoutes(app: FastifyInstance) {
 
         if (!unsettledBets?.length) continue
 
-        const { data: oddsRow } = await supabase
-          .from('odds')
-          .select('*')
-          .eq('game_id', dbGame.id)
-          .single()
-
         for (const bet of unsettledBets) {
           let result: 'win' | 'loss' | 'push' = 'loss'
           let payout = 0
@@ -245,8 +239,8 @@ export async function cronRoutes(app: FastifyInstance) {
               result = 'win'
               payout = calculatePayout(bet.amount, bet.odds_at_place)
             }
-          } else if (bet.market === 'spreads' && oddsRow?.home_spread !== null) {
-            const spread = oddsRow!.home_spread!
+          } else if (bet.market === 'spreads' && bet.line_at_place !== null) {
+            const spread = bet.line_at_place
             const adjustedHome = homeScore + spread
             if (adjustedHome === awayScore) {
               result = 'push'
@@ -257,9 +251,9 @@ export async function cronRoutes(app: FastifyInstance) {
               result = 'win'
               payout = calculatePayout(bet.amount, bet.odds_at_place)
             }
-          } else if (bet.market === 'totals' && oddsRow?.over_under !== null) {
+          } else if (bet.market === 'totals' && bet.line_at_place !== null) {
             const total = homeScore + awayScore
-            const line = oddsRow!.over_under!
+            const line = bet.line_at_place
             if (total === line) {
               result = 'push'
             } else if (
