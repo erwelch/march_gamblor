@@ -36,9 +36,6 @@ export async function cronRoutes(app: FastifyInstance) {
     }
 
     console.log(`[cron/sync-odds] Done. upserted=${result.upserted} total=${result.total}`)
-    if (result.upserted > 0) {
-      broadcast('odds-updated', { upserted: result.upserted })
-    }
     return reply.send({ ok: true, upserted: result.upserted, total: result.total })
   })
 

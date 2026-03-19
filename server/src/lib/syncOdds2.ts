@@ -1,137 +1,199 @@
-import SportsGameOdds from 'sports-odds-api'
+import { SharpAPI } from '@sharp-api/client'
 import { createServiceClient } from './supabase'
+import { broadcast } from './broadcaster'
 
 const BOOKMAKER = 'draftkings'
-const ODD_IDS = [
-  'points-home-game-ml-home',
-  'points-away-game-ml-away',
-  'points-home-game-sp-home',
-  'points-away-game-sp-away',
-  'points-all-game-ou-over',
-  'points-all-game-ou-under',
-].join(',')
 
-function parseOddsValue(val: string | null | undefined): number | null {
-  if (val == null || val === '') return null
-  const n = parseFloat(val)
-  return isNaN(n) ? null : n
+interface ParsedOdds {
+  bookmaker: string
+  home_ml: number | null
+  away_ml: number | null
+  home_spread: number | null
+  home_spread_price: number | null
+  away_spread_price: number | null
+  over_under: number | null
+  over_price: number | null
+  under_price: number | null
 }
 
-function parseEventOdds2(eventOdds: Record<string, any>, bookmakerID: string) {
-  const bk = (oddID: string) => eventOdds?.[oddID]?.byBookmaker?.[bookmakerID]
-  const consensus = (oddID: string) => eventOdds?.[oddID]
+interface SharpOddsLine {
+  market_type: string
+  selection_type: string
+  odds_american: number
+  line: number | null
+}
 
-  const homeML = bk('points-home-game-ml-home')
-  const awayML = bk('points-away-game-ml-away')
-  const homeSP = bk('points-home-game-sp-home')
-  const awaySP = bk('points-away-game-sp-away')
-  const over   = bk('points-all-game-ou-over')
-  const under  = bk('points-all-game-ou-under')
-
-  // Fall back to consensus bookOdds if bookmaker-specific entry is missing
-  const homeMLOdds  = parseOddsValue(homeML?.odds  ?? consensus('points-home-game-ml-home')?.bookOdds)
-  const awayMLOdds  = parseOddsValue(awayML?.odds  ?? consensus('points-away-game-ml-away')?.bookOdds)
-  const homeSpread  = parseOddsValue(homeSP?.spread ?? consensus('points-home-game-sp-home')?.bookSpread)
-  const homeSpPrice = parseOddsValue(homeSP?.odds   ?? consensus('points-home-game-sp-home')?.bookOdds)
-  const awaySpPrice = parseOddsValue(awaySP?.odds   ?? consensus('points-away-game-sp-away')?.bookOdds)
-  const ouLine      = parseOddsValue(over?.overUnder ?? consensus('points-all-game-ou-over')?.bookOverUnder)
-  const overPrice   = parseOddsValue(over?.odds      ?? consensus('points-all-game-ou-over')?.bookOdds)
-  const underPrice  = parseOddsValue(under?.odds     ?? consensus('points-all-game-ou-under')?.bookOdds)
-
-  return {
-    bookmaker: bookmakerID,
-    home_ml: homeMLOdds,
-    away_ml: awayMLOdds,
-    home_spread: homeSpread,
-    home_spread_price: homeSpPrice,
-    away_spread_price: awaySpPrice,
-    over_under: ouLine,
-    over_price: overPrice,
-    under_price: underPrice,
+function parseSharpOdds(lines: SharpOddsLine[]): ParsedOdds {
+  const result: ParsedOdds = {
+    bookmaker: BOOKMAKER,
+    home_ml: null,
+    away_ml: null,
+    home_spread: null,
+    home_spread_price: null,
+    away_spread_price: null,
+    over_under: null,
+    over_price: null,
+    under_price: null,
   }
+
+  for (const line of lines) {
+    const { market_type, selection_type, odds_american, line: spreadLine } = line
+
+    if (market_type === 'moneyline') {
+      if (selection_type === 'home') result.home_ml = odds_american
+      else if (selection_type === 'away') result.away_ml = odds_american
+    } else if (market_type === 'point_spread' || market_type === 'spread') {
+      if (selection_type === 'home') {
+        result.home_spread = spreadLine ?? null
+        result.home_spread_price = odds_american
+      } else if (selection_type === 'away') {
+        result.away_spread_price = odds_american
+      }
+    } else if (market_type === 'total_points' || market_type === 'total') {
+      if (selection_type === 'over') {
+        result.over_under = spreadLine ?? null
+        result.over_price = odds_american
+      } else if (selection_type === 'under') {
+        result.under_price = odds_american
+      }
+    }
+  }
+
+  return result
+}
+
+interface EventWithOdds {
+  event_id: string
+  event_name: string
+  start_time: string
+  home_team?: string
+  away_team?: string
+  odds: SharpOddsLine[]
+}
+
+async function processPage(
+  supabase: ReturnType<typeof createServiceClient>,
+  events: EventWithOdds[]
+): Promise<{ upserted: number }> {
+  let upserted = 0
+
+  for (const event of events) {
+    const eventId = event.event_id
+    const startTime = event.start_time
+    
+    // Extract team names from odds lines (they're duplicated across all lines for the same event)
+    const firstOdds = event.odds[0]
+    const homeTeam = firstOdds?.home_team || event.home_team
+    const awayTeam = firstOdds?.away_team || event.away_team
+
+    // Skip events with missing required fields
+    if (!eventId || !startTime || !homeTeam || !awayTeam) {
+      console.warn(`[syncOdds2] Skipping event with missing fields: eventId=${eventId}, startTime=${startTime}, homeTeam=${homeTeam}, awayTeam=${awayTeam}`)
+      continue
+    }
+
+    console.log(`[syncOdds2] Processing ${awayTeam} @ ${homeTeam}, startsAt=${startTime}`)
+
+    const { data: game, error: gameError } = await supabase
+      .from('games')
+      .upsert(
+        {
+          ncaa_game_id: eventId,
+          home_team: homeTeam,
+          away_team: awayTeam,
+          start_time: startTime,
+          game_date: startTime.substring(0, 10),
+        },
+        { onConflict: 'ncaa_game_id', ignoreDuplicates: false }
+      )
+      .select('id')
+      .single()
+
+    if (gameError || !game) {
+      console.warn(`[syncOdds2] Failed to upsert game ${eventId}:`, gameError?.message)
+      continue
+    }
+
+    const parsed = parseSharpOdds(event.odds)
+
+    const { error: oddsError } = await supabase
+      .from('odds')
+      .upsert(
+        { game_id: game.id, ...parsed, fetched_at: new Date().toISOString() },
+        { onConflict: 'game_id,bookmaker' }
+      )
+
+    if (oddsError) {
+      console.warn(`[syncOdds2] Failed to upsert odds for game ${eventId}:`, oddsError?.message)
+      continue
+    }
+
+    upserted++
+  }
+
+  return { upserted }
 }
 
 export async function syncOdds2() {
   console.log('[syncOdds2] Starting...')
-  const client = new SportsGameOdds({
-    apiKeyHeader: process.env.SPORTS_ODDS_API_KEY_HEADER,
-  })
-  console.log('[syncOdds2] API key present:', !!process.env.SPORTS_ODDS_API_KEY_HEADER)
+  const api = new SharpAPI(process.env.SHARP_API_KEY!)
+  console.log('[syncOdds2] API key present:', !!process.env.SHARP_API_KEY)
 
   const supabase = createServiceClient()
-  let upserted = 0
   let total = 0
 
+  const limit = 10
+  let offset = 0
+  let hasMore = true
+
+  // Only fetch games starting within the next 3 days
+  const now = new Date()
+  const cutoff = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)
+
+  const pagePromises: Promise<{ upserted: number }>[] = []
+
   try {
-    const startsAfter = new Date('2026-03-16T00:00:00.000Z').toISOString()
-    console.log(`[syncOdds2] Fetching events startsAfter=${startsAfter}`)
+    console.log('[syncOdds2] Fetching NCAAB odds from SharpAPI...')
 
-    for await (const event of client.events.get({
-      sportID: 'BASKETBALL',
-      leagueID: 'NCAAB',
-      ended: false,
-      oddsAvailable: true,
-      bookmakerID: BOOKMAKER,
-      oddID: ODD_IDS,
-      startsAfter,
-      limit: 50,
-    })) {
-      total++
-      console.log(`[syncOdds2] Processing event #${total} eventID=${event.eventID ?? '(none)'}`)
+    while (hasMore) {
+      const response = await api.odds.get({
+        league: 'ncaab',
+        sportsbook: BOOKMAKER,
+        market: 'moneyline,point_spread,total_points',
+        group_by: 'event',
+        limit,
+        offset,
+      } as any)
 
-      if (!event.eventID) continue
+      const events: EventWithOdds[] = response.data ?? []
+      const pagination = (response as any).pagination ?? response.meta?.pagination
+      hasMore = pagination?.has_more === true
+      offset = pagination?.next_offset ?? offset + events.length
 
-      const homeTeam = event.teams?.home?.names?.long ?? event.teams?.home?.names?.medium ?? ''
-      const awayTeam = event.teams?.away?.names?.long ?? event.teams?.away?.names?.medium ?? ''
-      const startTime = event.status?.startsAt
-      console.log(`[syncOdds2] Event: ${awayTeam} @ ${homeTeam}, startsAt=${startTime}`)
+      console.log(`[syncOdds2] Page offset=${offset - events.length}: got ${events.length} events, has_more=${hasMore}`)
 
-      if (!startTime) {
-        console.warn(`[syncOdds2] Skipping event ${event.eventID}: no startsAt`)
-        continue
+      if (events.length === 0) break
+
+      total += events.length
+      pagePromises.push(processPage(supabase, events))
+
+      // Stop paginating if the last event on this page is beyond the 3-day window
+      const lastEvent = events[events.length - 1]
+      if (lastEvent?.start_time && new Date(lastEvent.start_time) > cutoff) {
+        console.log(`[syncOdds2] Last event on page exceeds 3-day window, stopping pagination`)
+        break
       }
-
-      const { data: game, error: gameError } = await supabase
-        .from('games')
-        .upsert(
-          {
-            ncaa_game_id: event.eventID,
-            home_team: homeTeam,
-            away_team: awayTeam,
-            start_time: startTime,
-            game_date: startTime.substring(0, 10),
-          },
-          { onConflict: 'ncaa_game_id', ignoreDuplicates: false }
-        )
-        .select('id')
-        .single()
-
-      if (gameError || !game) {
-        console.warn(`[syncOdds2] Failed to upsert game ${event.eventID}:`, gameError?.message)
-        continue
-      }
-
-      const parsed = parseEventOdds2(event.odds ?? {}, BOOKMAKER)
-
-      const { error: oddsError } = await supabase
-        .from('odds')
-        .upsert(
-          { game_id: game.id, ...parsed, fetched_at: new Date().toISOString() },
-          { onConflict: 'game_id,bookmaker' }
-        )
-
-      if (oddsError) {
-        console.warn(`[syncOdds2] Failed to upsert odds for game ${event.eventID}:`, oddsError?.message)
-        continue
-      }
-
-      upserted++
     }
+
+    // Wait for all in-flight page processing to complete
+    const results = await Promise.all(pagePromises)
+    const upserted = results.reduce((sum, r) => sum + r.upserted, 0)
+
+    console.log(`[syncOdds2] Finished. upserted=${upserted} total=${total}`)
+    broadcast('odds-updated', { upserted: upserted })
+    return { upserted, total }
   } catch (err: any) {
     console.error('[syncOdds2] Fatal error:', err?.message ?? err)
-    return { upserted, total, error: `Failed to fetch events: ${err?.message ?? err}` }
+    return { upserted: 0, total, error: `Failed to fetch odds: ${err?.message ?? err}` }
   }
-
-  console.log(`[syncOdds2] Finished. upserted=${upserted} total=${total}`)
-  return { upserted, total }
 }
