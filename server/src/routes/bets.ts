@@ -143,10 +143,10 @@ export async function betsRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'line_at_place must be a finite number' })
     }
 
-    // Only allow editing unsettled bets owned by the user
+    // Fetch the bet with full fields needed for potential recalculation
     const { data: bet, error: fetchError } = await supabase
       .from('bets')
-      .select('id, result, market')
+      .select('id, result, payout, market, pick, amount, odds_at_place, game_id')
       .eq('id', id)
       .eq('user_id', user.id)
       .single()
@@ -156,6 +156,87 @@ export async function betsRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'line_at_place only applies to spreads and totals' })
     }
 
+    const serviceClient = createServiceClient()
+
+    // If this bet is already settled on a final game, recalculate result/payout with the new line
+    if (bet.result !== null) {
+      const { data: game } = await serviceClient
+        .from('games')
+        .select('status, home_score, away_score')
+        .eq('id', bet.game_id)
+        .single()
+
+      if (!game || game.status !== 'final' || game.home_score === null || game.away_score === null) {
+        return reply.status(409).send({ error: 'Cannot recalculate: game scores not available' })
+      }
+
+      const homeScore = game.home_score as number
+      const awayScore = game.away_score as number
+
+      let newResult: 'win' | 'loss' | 'push' = 'loss'
+      let newPayout = 0
+
+      if (bet.market === 'spreads') {
+        const adjustedHome = homeScore + line_at_place
+        if (adjustedHome === awayScore) {
+          newResult = 'push'
+        } else if (
+          (bet.pick === 'home' && adjustedHome > awayScore) ||
+          (bet.pick === 'away' && adjustedHome < awayScore)
+        ) {
+          newResult = 'win'
+          newPayout = calculatePayout(bet.amount, bet.odds_at_place)
+        }
+      } else if (bet.market === 'totals') {
+        const total = homeScore + awayScore
+        if (total === line_at_place) {
+          newResult = 'push'
+        } else if (
+          (bet.pick === 'over' && total > line_at_place) ||
+          (bet.pick === 'under' && total < line_at_place)
+        ) {
+          newResult = 'win'
+          newPayout = calculatePayout(bet.amount, bet.odds_at_place)
+        }
+      }
+
+      // Compute the old credit that was applied to the user's balance when this bet was originally settled.
+      // The DB trigger credits balance on bet UPDATE (win→payout, push→amount).
+      // Strategy: reverse the old credit manually, then update the bet so the trigger applies the new credit.
+      const oldCredit = bet.result === 'win' ? (bet.payout ?? 0) : bet.result === 'push' ? bet.amount : 0
+      if (oldCredit !== 0) {
+        const { data: prof } = await serviceClient.from('profiles').select('balance').eq('id', user.id).single()
+        if (prof) {
+          await serviceClient.from('profiles').update({ balance: (prof.balance ?? 0) - oldCredit }).eq('id', user.id)
+        }
+      }
+
+      // Update bet with new line, result, payout, settled_at — the DB trigger will credit the new payout
+      const { error: updateError } = await serviceClient
+        .from('bets')
+        .update({
+          line_at_place,
+          result: newResult,
+          payout: newPayout,
+          settled_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+
+      if (updateError) {
+        console.error('Bet recalculation update error:', updateError)
+        return reply.status(500).send({ error: 'Failed to update bet' })
+      }
+
+      // Read updated balance to broadcast
+      const { data: updatedProfile } = await serviceClient.from('profiles').select('balance').eq('id', user.id).single()
+      if (updatedProfile) {
+        broadcast('balance-updated', { userId: user.id, balance: updatedProfile.balance })
+      }
+
+      return reply.send({ ok: true, line_at_place, result: newResult, payout: newPayout })
+    }
+
+    // Bet is not yet settled — just update the line
     const { error: updateError } = await supabase
       .from('bets')
       .update({ line_at_place })

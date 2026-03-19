@@ -13,7 +13,9 @@ function statusBadge(bet: BetWithGame) {
   return <span className="rounded-full bg-gray-700 px-2 py-0.5 text-xs text-gray-400">Pending</span>
 }
 
-function LineEditor({ bet, onSaved }: { bet: BetWithGame; onSaved: (line: number) => void }) {
+interface LineUpdateResult { line_at_place: number; result?: 'win' | 'loss' | 'push' | null; payout?: number | null }
+
+function LineEditor({ bet, onSaved }: { bet: BetWithGame; onSaved: (res: LineUpdateResult) => void }) {
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(bet.line_at_place?.toString() ?? '')
   const [saving, setSaving] = useState(false)
@@ -34,7 +36,8 @@ function LineEditor({ bet, onSaved }: { bet: BetWithGame; onSaved: (line: number
     })
     setSaving(false)
     if (res.ok) {
-      onSaved(parsed)
+      const data = await res.json()
+      onSaved({ line_at_place: parsed, result: data.result ?? undefined, payout: data.payout ?? undefined })
       setEditing(false)
     }
   }
@@ -86,8 +89,16 @@ export default function BetsPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  function updateLine(betId: string, line: number) {
-    setBets(prev => prev.map(b => b.id === betId ? { ...b, line_at_place: line } : b))
+  function updateLine(betId: string, res: LineUpdateResult) {
+    setBets(prev => prev.map(b => {
+      if (b.id !== betId) return b
+      return {
+        ...b,
+        line_at_place: res.line_at_place,
+        ...(res.result !== undefined ? { result: res.result } : {}),
+        ...(res.payout !== undefined ? { payout: res.payout } : {}),
+      }
+    }))
   }
 
   if (loading) {
@@ -138,7 +149,7 @@ export default function BetsPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     {(bet.market === 'spreads' || bet.market === 'totals')
-                      ? <LineEditor bet={bet} onSaved={line => updateLine(bet.id, line)} />
+                      ? <LineEditor bet={bet} onSaved={res => updateLine(bet.id, res)} />
                       : <span className="text-gray-600">—</span>
                     }
                   </td>
