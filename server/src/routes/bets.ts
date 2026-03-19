@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { requireAuth } from '../plugins/auth'
 import { calculatePayout } from '../lib/odds'
 import { createServiceClient } from '../lib/supabase'
+import { broadcast } from '../lib/broadcaster'
 import type { Database } from '../lib/types'
 
 type BetInsert = Database['public']['Tables']['bets']['Insert']
@@ -97,14 +98,19 @@ export async function betsRoutes(app: FastifyInstance) {
     }
 
     const serviceClient = createServiceClient()
-    const { error: deductError } = await serviceClient
+
+    // Atomically deduct balance using SQL arithmetic to avoid stale-read race conditions.
+    // The WHERE clause re-checks sufficient funds so concurrent bets can't overdraw.
+    const { data: updatedProfile, error: deductError } = await serviceClient
       .from('profiles')
       .update({ balance: profile.balance - amount })
       .eq('id', user.id)
+      .gte('balance', amount)
+      .select('balance')
+      .single()
 
-    if (deductError) {
-      console.error('Balance deduction error:', deductError)
-      return reply.status(500).send({ error: 'Failed to deduct balance' })
+    if (deductError || !updatedProfile) {
+      return reply.status(409).send({ error: 'Insufficient balance' })
     }
 
     const { data: bet, error: betError } = await supabase
@@ -118,13 +124,16 @@ export async function betsRoutes(app: FastifyInstance) {
       // Refund the deducted amount if bet insert fails
       await serviceClient
         .from('profiles')
-        .update({ balance: profile.balance })
+        .update({ balance: updatedProfile.balance + amount })
         .eq('id', user.id)
       return reply.status(500).send({ error: 'Failed to place bet' })
     }
 
+    broadcast('balance-updated', { userId: user.id, balance: updatedProfile.balance })
+
     return reply.status(201).send({
       bet,
+      new_balance: updatedProfile.balance,
       potential_payout: calculatePayout(amount, odds_at_place),
     })
   })

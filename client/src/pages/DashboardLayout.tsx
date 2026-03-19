@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import NavBar from '../components/NavBar'
+import { useSSE } from '../lib/useSSE'
 
 export default function DashboardLayout() {
   const [username, setUsername] = useState('')
@@ -25,6 +26,13 @@ export default function DashboardLayout() {
     }
     loadProfile()
   }, [])
+
+  useSSE({
+    'balance-updated': (data) => {
+      const { balance } = data as { userId: string; balance: number }
+      setBalance(balance)
+    },
+  })
 
   return (
     <div className="min-h-screen">
