@@ -1,84 +1,66 @@
 import type { FastifyInstance } from 'fastify'
-import { SharpAPI } from '@sharp-api/client'
 import { syncOdds2 as syncOdds } from '../lib/syncOdds2'
 import { createServiceClient } from '../lib/supabase'
 import { calculatePayout } from '../lib/odds'
 import { broadcast } from '../lib/broadcaster'
+import { matchNcaaGameToDbGame } from '../lib/teamNames'
 
-/** game_state is returned by the API for live/ended events but not in SDK types */
-interface SharpGameState {
-  home_score?: number
-  away_score?: number
-  period?: string | number
-  clock?: string
+interface NcaaTeamNames {
+  short?: string
+  full?: string
+  seo?: string
+  char6?: string
+}
+
+interface NcaaTeam {
+  teamId?: string
+  names?: NcaaTeamNames
+  score?: string | number
+  isTop25?: boolean
   [key: string]: unknown
 }
 
-interface SharpEventWithState {
-  id: string
-  homeTeam: string
-  awayTeam: string
-  startTime: string
-  isLive: boolean
-  status: 'upcoming' | 'live' | 'ended'
-  game_state?: SharpGameState
+interface NcaaGame {
+  gameID?: string
+  game?: {
+    gameID?: string
+    away?: NcaaTeam
+    home?: NcaaTeam
+    gameState?: string // 'pre', 'live', 'final'
+    startDate?: string
+    startTime?: string
+    [key: string]: unknown
+  }
+  [key: string]: unknown
 }
 
-async function fetchSharpEventsForDate(api: SharpAPI, date: string): Promise<SharpEventWithState[]> {
-  const limit = 50
-  const has_score = true // filter for events that have scores (live or ended)
-  let offset = 0
-  let hasMore = true
-  const allEvents: SharpEventWithState[] = []
-
-  while (hasMore) {
-    const response = await (api.events.list as any)({
-      league: 'ncaab',
-      has_score,
-      date,
-      limit,
-      offset,
-    })
-
-    const events: SharpEventWithState[] = (response.data as any) ?? []
-    const pagination = (response as any).pagination ?? response.meta?.pagination
-    hasMore = pagination?.has_more === true
-    offset = pagination?.next_offset ?? offset + events.length
-
-    // Only keep live or ended events — upcoming events have no scores
-    const relevant = events.filter(
-      (e: SharpEventWithState) => e.status === 'live' || e.status === 'ended'
-    )
-    allEvents.push(...relevant)
-
-    if (events.length === 0) break
-  }
-
-  return allEvents
+interface NcaaScoreboardResponse {
+  games?: NcaaGame[]
+  [key: string]: unknown
 }
 
-async function fetchSharpEvents(api: SharpAPI): Promise<SharpEventWithState[]> {
-  const now = new Date()
-  const toDateStr = (d: Date) => d.toISOString().slice(0, 10)
+const NCAA_SCOREBOARD_BASE = 'https://ncaa-api.henrygd.me/scoreboard/basketball-men/d1'
 
-  const yesterday = new Date(now)
-  yesterday.setDate(now.getDate() - 1)
-
-  const [yesterdayEvents, todayEvents] = await Promise.all([
-    fetchSharpEventsForDate(api, toDateStr(yesterday)),
-    fetchSharpEventsForDate(api, toDateStr(now)),
-  ])
-
-  // Deduplicate by event id in case of overlap
-  const seen = new Set<string>()
-  const combined: SharpEventWithState[] = []
-  for (const e of [...yesterdayEvents, ...todayEvents]) {
-    if (!seen.has(e.id)) {
-      seen.add(e.id)
-      combined.push(e)
-    }
+async function fetchNcaaScoreboard(dateStr: string): Promise<NcaaGame[]> {
+  // dateStr format: YYYY/MM/DD
+  const url = `${NCAA_SCOREBOARD_BASE}/${dateStr}`
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(`NCAA API returned ${res.status} for ${url}`)
   }
-  return combined
+  const data = (await res.json()) as NcaaScoreboardResponse
+  return data.games ?? []
+}
+
+function toNcaaDatePath(d: Date): string {
+  const yyyy = d.getUTCFullYear()
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  return `${yyyy}/${mm}/${dd}`
+}
+
+function toIsoDate(d: Date): string {
+  return d.toISOString().slice(0, 10)
 }
 
 export async function cronRoutes(app: FastifyInstance) {
@@ -108,44 +90,138 @@ export async function cronRoutes(app: FastifyInstance) {
     }
 
     const supabase = createServiceClient()
-    const api = new SharpAPI(process.env.SHARP_API_KEY!)
+    const now = new Date()
+    const yesterday = new Date(now)
+    yesterday.setUTCDate(now.getUTCDate() - 1)
 
-    let allEvents: SharpEventWithState[]
+    const todayIso = toIsoDate(now)
+    const yesterdayIso = toIsoDate(yesterday)
+
+    // Fetch NCAA scoreboards for today and yesterday in parallel
+    let ncaaGamesToday: NcaaGame[]
+    let ncaaGamesYesterday: NcaaGame[]
     try {
-      allEvents = await fetchSharpEvents(api)
+      ;[ncaaGamesToday, ncaaGamesYesterday] = await Promise.all([
+        fetchNcaaScoreboard(toNcaaDatePath(now)),
+        fetchNcaaScoreboard(toNcaaDatePath(yesterday)),
+      ])
     } catch (err: any) {
-      console.error('[cron/sync-scores] Failed to fetch events from SharpAPI:', err?.message ?? err)
-      return reply.status(502).send({ error: `Failed to fetch events: ${err?.message ?? err}` })
+      console.error('[cron/sync-scores] Failed to fetch NCAA scoreboard:', err?.message ?? err)
+      return reply.status(502).send({ error: `Failed to fetch NCAA scoreboard: ${err?.message ?? err}` })
     }
 
-    console.log(`[cron/sync-scores] Fetched ${allEvents.length} live/ended events`)
+    // Only process games that are live or final (skip pre-game)
+    const allNcaaGames = [...ncaaGamesToday, ...ncaaGamesYesterday].filter((g) => {
+      const state = g.game?.gameState
+      return state === 'live' || state === 'final'
+    })
+
+    console.log(`[cron/sync-scores] Fetched ${allNcaaGames.length} live/final NCAA games`)
+
+    // Fetch DB games for today and yesterday that may need updating
+    const { data: dbGames } = await supabase
+      .from('games')
+      .select('*')
+      .in('game_date', [todayIso, yesterdayIso])
+      .in('status', ['scheduled', 'live'])
+
+    if (!dbGames?.length) {
+      console.log('[cron/sync-scores] No scheduled/live DB games found for today or yesterday')
+      return reply.send({ ok: true, updated: 0, settled: 0 })
+    }
+
+    // Also fetch any DB games already marked final but potentially missing settlement
+    const { data: finalDbGames } = await supabase
+      .from('games')
+      .select('*')
+      .in('game_date', [todayIso, yesterdayIso])
+      .eq('status', 'final')
+
+    const allDbGames = [...(dbGames ?? []), ...(finalDbGames ?? [])]
 
     let updated = 0
     let settled = 0
 
-    for (const g of allEvents) {
-      const gameState = g.game_state
-      const homeScore = gameState?.home_score != null ? Number(gameState.home_score) : null
-      const awayScore = gameState?.away_score != null ? Number(gameState.away_score) : null
+    for (const ncaaGame of allNcaaGames) {
+      const inner = ncaaGame.game
+      if (!inner) continue
 
+      const ncaaId = inner.gameID ?? ncaaGame.gameID
+      if (!ncaaId) continue
+
+      const homeTeamNames = inner.home?.names
+      const awayTeamNames = inner.away?.names
+      const ncaaHomeName = homeTeamNames?.short ?? homeTeamNames?.full ?? ''
+      const ncaaAwayName = awayTeamNames?.short ?? awayTeamNames?.full ?? ''
+
+      const homeScore = inner.home?.score != null ? Number(inner.home.score) : null
+      const awayScore = inner.away?.score != null ? Number(inner.away.score) : null
+
+      const ncaaState = inner.gameState
       const status: 'scheduled' | 'live' | 'final' =
-        g.status === 'ended' ? 'final' : g.status === 'live' ? 'live' : 'scheduled'
+        ncaaState === 'final' ? 'final' : ncaaState === 'live' ? 'live' : 'scheduled'
 
-      const { data: game } = await supabase
+      // Determine the game_date for this NCAA game — use start date if available, else infer from which day it came from
+      // The NCAA API startDate might be in format like "03/17/2026"
+      let gameDate: string
+      if (inner.startDate) {
+        // Convert MM/DD/YYYY → YYYY-MM-DD
+        const parts = String(inner.startDate).split('/')
+        if (parts.length === 3) {
+          gameDate = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`
+        } else {
+          gameDate = todayIso
+        }
+      } else {
+        gameDate = todayIso
+      }
+
+      // Fast path: look up by ncaa_scoreboard_id
+      let dbGame = allDbGames.find((g) => (g as any).ncaa_scoreboard_id === ncaaId) ?? null
+
+      // Link path: fuzzy match by team names + date, then store the ID
+      if (!dbGame) {
+        dbGame = matchNcaaGameToDbGame(ncaaHomeName, ncaaAwayName, gameDate, allDbGames)
+
+        if (dbGame) {
+          console.log(
+            `[cron/sync-scores] Linked NCAA game ${ncaaId} (${ncaaAwayName} @ ${ncaaHomeName}) → DB game ${dbGame.id}`
+          )
+          // Store NCAA scoreboard ID for future fast-path lookups
+          await supabase
+            .from('games')
+            .update({ ncaa_scoreboard_id: ncaaId } as any)
+            .eq('id', dbGame.id)
+        } else {
+          console.warn(
+            `[cron/sync-scores] No DB match for NCAA game ${ncaaId}: ${ncaaAwayName} @ ${ncaaHomeName} on ${gameDate}`
+          )
+          continue
+        }
+      }
+
+      // Update scores and status
+      const { data: updatedGame } = await supabase
         .from('games')
-        .update({ home_score: homeScore, away_score: awayScore, status, updated_at: new Date().toISOString() })
-        .eq('ncaa_game_id', g.id)
+        .update({
+          home_score: homeScore,
+          away_score: awayScore,
+          status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', dbGame.id)
         .select('id, status')
         .single()
 
-      if (!game) continue
+      if (!updatedGame) continue
       updated++
 
+      // Settle bets on final games
       if (status === 'final' && homeScore !== null && awayScore !== null) {
         const { data: unsettledBets } = await supabase
           .from('bets')
           .select('*')
-          .eq('game_id', game.id)
+          .eq('game_id', dbGame.id)
           .is('result', null)
 
         if (!unsettledBets?.length) continue
@@ -153,7 +229,7 @@ export async function cronRoutes(app: FastifyInstance) {
         const { data: oddsRow } = await supabase
           .from('odds')
           .select('*')
-          .eq('game_id', game.id)
+          .eq('game_id', dbGame.id)
           .single()
 
         for (const bet of unsettledBets) {

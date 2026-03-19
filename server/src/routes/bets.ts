@@ -96,7 +96,7 @@ export async function betsRoutes(app: FastifyInstance) {
       .eq('id', user.id)
       .single()
 
-    if (!profile || profile.balance < amount) {
+    if (!profile || !profile.balance || profile.balance < amount) {
       return reply.status(409).send({ error: 'Insufficient balance' })
     }
 

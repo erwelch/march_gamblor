@@ -48,10 +48,11 @@ export async function profileRoutes(app: FastifyInstance) {
     if (error || !profile) {
       return reply.status(404).send({ error: 'Profile not found.' })
     }
+    const balance = profile.balance ?? 0
 
     const { data: updated, error: updateError } = await serviceClient
       .from('profiles')
-      .update({ balance: profile.balance + amount })
+      .update({ balance: balance + amount })
       .eq('id', user.id)
       .select('balance')
       .single()
