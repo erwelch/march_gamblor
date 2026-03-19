@@ -23,12 +23,13 @@ function GameCard({ game, bettedKeys, onBetPlaced }: GameCardProps) {
   const o = game.odds
 
   const isLive = game.status === 'live'
-  const isLocked = isLive || game.status === 'final' || (!o && new Date(game.start_time) <= new Date())
-  const showOdds = !!o && (isLive || !isLocked)
+  const isFinal = game.status === 'final'
+  const isLocked = isLive || isFinal || (!o && new Date(game.start_time) <= new Date())
+  const showOdds = !!o && (isLive || isFinal || !isLocked)
 
   return (
     <>
-      <div className={`relative flex flex-col gap-3 rounded-xl bg-gray-900 p-4 ring-1 ${isLive ? 'ring-red-500/40' : 'ring-gray-800'}`}>
+      <div className={`relative flex flex-col gap-3 rounded-xl bg-gray-900 p-4 ring-1 ${isLive ? 'ring-red-500/40' : isFinal ? 'ring-gray-700/60 opacity-60' : 'ring-gray-800'}`}>
         {/* Header */}
         <div className="flex items-center justify-between">
           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${STATUS_BADGE[game.status]}`}>
@@ -64,14 +65,14 @@ function GameCard({ game, bettedKeys, onBetPlaced }: GameCardProps) {
                   label={game.away_team}
                   value={formatOdds(o.away_ml)}
                   hasExisting={hasExistingBet('h2h')}
-                  disabled={isLive}
+                  disabled={isLive || isFinal}
                   onClick={() => setBetModal({ market: 'h2h', pick: 'away', odds: o.away_ml! })}
                 />
                 <OddsButton
                   label={game.home_team}
                   value={formatOdds(o.home_ml)}
                   hasExisting={hasExistingBet('h2h')}
-                  disabled={isLive}
+                  disabled={isLive || isFinal}
                   onClick={() => setBetModal({ market: 'h2h', pick: 'home', odds: o.home_ml! })}
                 />
               </div>
@@ -86,14 +87,14 @@ function GameCard({ game, bettedKeys, onBetPlaced }: GameCardProps) {
                     label={`${game.away_team} ${formatSpread(o.home_spread === null ? null : -o.home_spread!)}`}
                     value={formatOdds(o.away_spread_price)}
                     hasExisting={hasExistingBet('spreads')}
-                    disabled={isLive}
+                    disabled={isLive || isFinal}
                     onClick={() => setBetModal({ market: 'spreads', pick: 'away', odds: o.away_spread_price! })}
                   />
                   <OddsButton
                     label={`${game.home_team} ${formatSpread(o.home_spread)}`}
                     value={formatOdds(o.home_spread_price)}
                     hasExisting={hasExistingBet('spreads')}
-                    disabled={isLive}
+                    disabled={isLive || isFinal}
                     onClick={() => setBetModal({ market: 'spreads', pick: 'home', odds: o.home_spread_price! })}
                   />
                 </div>
@@ -109,14 +110,14 @@ function GameCard({ game, bettedKeys, onBetPlaced }: GameCardProps) {
                     label="Over"
                     value={formatOdds(o.over_price)}
                     hasExisting={hasExistingBet('totals')}
-                    disabled={isLive}
+                    disabled={isLive || isFinal}
                     onClick={() => setBetModal({ market: 'totals', pick: 'over', odds: o.over_price! })}
                   />
                   <OddsButton
                     label="Under"
                     value={formatOdds(o.under_price)}
                     hasExisting={hasExistingBet('totals')}
-                    disabled={isLive}
+                    disabled={isLive || isFinal}
                     onClick={() => setBetModal({ market: 'totals', pick: 'under', odds: o.under_price! })}
                   />
                 </div>
@@ -131,7 +132,12 @@ function GameCard({ game, bettedKeys, onBetPlaced }: GameCardProps) {
             <p className="text-xs font-medium text-red-400">Game in progress — betting closed</p>
           </div>
         )}
-        {isLocked && !isLive && game.status !== 'final' && (
+        {isFinal && (
+          <div className="flex items-center justify-center gap-1.5 rounded-lg bg-gray-700/40 py-1.5 ring-1 ring-gray-600/30">
+            <p className="text-xs font-medium text-gray-500">Game over — betting closed</p>
+          </div>
+        )}
+        {isLocked && !isLive && !isFinal && (
           <p className="text-center text-xs text-gray-600">Betting locked</p>
         )}
 
