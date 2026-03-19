@@ -147,7 +147,7 @@ export async function syncOdds2() {
   const supabase = createServiceClient()
   let total = 0
 
-  const limit = 10
+  const limit = 5
   let offset = 0
   let hasMore = true
 
