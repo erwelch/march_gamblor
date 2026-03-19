@@ -1,23 +1,84 @@
 import type { FastifyInstance } from 'fastify'
+import { SharpAPI } from '@sharp-api/client'
 import { syncOdds2 as syncOdds } from '../lib/syncOdds2'
 import { createServiceClient } from '../lib/supabase'
 import { calculatePayout } from '../lib/odds'
 import { broadcast } from '../lib/broadcaster'
 
-interface NcaaGame {
-  gameID: string
-  startTime: string
-  status: string
-  home: { names: { short: string }; score: string }
-  away: { names: { short: string }; score: string }
+/** game_state is returned by the API for live/ended events but not in SDK types */
+interface SharpGameState {
+  home_score?: number
+  away_score?: number
+  period?: string | number
+  clock?: string
+  [key: string]: unknown
 }
 
-async function fetchScoresForDate(dateStr: string): Promise<NcaaGame[]> {
-  const url = `https://ncaa-api.henrygd.me/scoreboard/basketball-men/d1/${dateStr}`
-  const res = await fetch(url)
-  if (!res.ok) return []
-  const data = await res.json()
-  return (data.games ?? []).map((e: { game: NcaaGame }) => e.game)
+interface SharpEventWithState {
+  id: string
+  homeTeam: string
+  awayTeam: string
+  startTime: string
+  isLive: boolean
+  status: 'upcoming' | 'live' | 'ended'
+  game_state?: SharpGameState
+}
+
+async function fetchSharpEventsForDate(api: SharpAPI, date: string): Promise<SharpEventWithState[]> {
+  const limit = 50
+  const has_score = true // filter for events that have scores (live or ended)
+  let offset = 0
+  let hasMore = true
+  const allEvents: SharpEventWithState[] = []
+
+  while (hasMore) {
+    const response = await (api.events.list as any)({
+      league: 'ncaab',
+      has_score,
+      date,
+      limit,
+      offset,
+    })
+
+    const events: SharpEventWithState[] = (response.data as any) ?? []
+    const pagination = (response as any).pagination ?? response.meta?.pagination
+    hasMore = pagination?.has_more === true
+    offset = pagination?.next_offset ?? offset + events.length
+
+    // Only keep live or ended events — upcoming events have no scores
+    const relevant = events.filter(
+      (e: SharpEventWithState) => e.status === 'live' || e.status === 'ended'
+    )
+    allEvents.push(...relevant)
+
+    if (events.length === 0) break
+  }
+
+  return allEvents
+}
+
+async function fetchSharpEvents(api: SharpAPI): Promise<SharpEventWithState[]> {
+  const now = new Date()
+  const toDateStr = (d: Date) => d.toISOString().slice(0, 10)
+
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+
+  const [yesterdayEvents, todayEvents] = await Promise.all([
+    fetchSharpEventsForDate(api, toDateStr(yesterday)),
+    fetchSharpEventsForDate(api, toDateStr(now)),
+  ])
+
+  // Deduplicate by event id in case of overlap
+  const seen = new Set<string>()
+  const combined: SharpEventWithState[] = []
+  for (const e of [...yesterdayEvents, ...todayEvents]) {
+    if (!seen.has(e.id)) {
+      seen.add(e.id)
+      combined.push(e)
+    }
+  }
+  return combined
 }
 
 export async function cronRoutes(app: FastifyInstance) {
@@ -47,36 +108,33 @@ export async function cronRoutes(app: FastifyInstance) {
     }
 
     const supabase = createServiceClient()
+    const api = new SharpAPI(process.env.SHARP_API_KEY!)
 
-    const now = new Date()
-    const today = now.toISOString().substring(0, 10).replace(/-/g, '/')
-    const yesterday = new Date(now.getTime() - 86400000).toISOString().substring(0, 10).replace(/-/g, '/')
+    let allEvents: SharpEventWithState[]
+    try {
+      allEvents = await fetchSharpEvents(api)
+    } catch (err: any) {
+      console.error('[cron/sync-scores] Failed to fetch events from SharpAPI:', err?.message ?? err)
+      return reply.status(502).send({ error: `Failed to fetch events: ${err?.message ?? err}` })
+    }
 
-    const [todayGames, yesterdayGames] = await Promise.all([
-      fetchScoresForDate(today),
-      fetchScoresForDate(yesterday),
-    ])
+    console.log(`[cron/sync-scores] Fetched ${allEvents.length} live/ended events`)
 
-    const allGames = [...todayGames, ...yesterdayGames]
     let updated = 0
     let settled = 0
 
-    for (const g of allGames) {
-      const homeScore = parseInt(g.home.score) || null
-      const awayScore = parseInt(g.away.score) || null
+    for (const g of allEvents) {
+      const gameState = g.game_state
+      const homeScore = gameState?.home_score != null ? Number(gameState.home_score) : null
+      const awayScore = gameState?.away_score != null ? Number(gameState.away_score) : null
 
-      let status: 'scheduled' | 'live' | 'final' = 'scheduled'
-      const rawStatus = (g.status ?? '').toLowerCase()
-      if (rawStatus === 'final' || rawStatus === 'final/ot') {
-        status = 'final'
-      } else if (rawStatus !== '' && rawStatus !== 'scheduled' && rawStatus !== 'ppd') {
-        status = 'live'
-      }
+      const status: 'scheduled' | 'live' | 'final' =
+        g.status === 'ended' ? 'final' : g.status === 'live' ? 'live' : 'scheduled'
 
       const { data: game } = await supabase
         .from('games')
         .update({ home_score: homeScore, away_score: awayScore, status, updated_at: new Date().toISOString() })
-        .eq('ncaa_game_id', g.gameID)
+        .eq('ncaa_game_id', g.id)
         .select('id, status')
         .single()
 
@@ -138,18 +196,7 @@ export async function cronRoutes(app: FastifyInstance) {
             .from('bets')
             .update({ result, payout, settled_at: new Date().toISOString() })
             .eq('id', bet.id)
-
-          if (result === 'win') {
-            const { data: profile } = await supabase.from('profiles').select('balance').eq('id', bet.user_id).single()
-            if (profile) {
-              await supabase.from('profiles').update({ balance: profile.balance + payout }).eq('id', bet.user_id)
-            }
-          } else if (result === 'push') {
-            const { data: profile } = await supabase.from('profiles').select('balance').eq('id', bet.user_id).single()
-            if (profile) {
-              await supabase.from('profiles').update({ balance: profile.balance + bet.amount }).eq('id', bet.user_id)
-            }
-          }
+          // Balance is credited by the DB trigger on bets UPDATE (win → payout, push → amount).
 
           settled++
         }
