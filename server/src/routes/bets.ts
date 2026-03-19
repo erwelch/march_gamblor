@@ -200,18 +200,21 @@ export async function betsRoutes(app: FastifyInstance) {
         }
       }
 
-      // Compute the old credit that was applied to the user's balance when this bet was originally settled.
-      // The DB trigger credits balance on bet UPDATE (win→payout, push→amount).
-      // Strategy: reverse the old credit manually, then update the bet so the trigger applies the new credit.
+      // Manually reverse the old settlement credit and apply the new one.
+      // The existing trigger only fires on initial settlement (old.result IS NULL → new.result IS NOT NULL),
+      // so recalculation balance adjustments must be done here until the trigger is updated.
       const oldCredit = bet.result === 'win' ? (bet.payout ?? 0) : bet.result === 'push' ? bet.amount : 0
-      if (oldCredit !== 0) {
+      const newCredit = newResult === 'win' ? newPayout : newResult === 'push' ? bet.amount : 0
+      if (oldCredit !== newCredit) {
         const { data: prof } = await serviceClient.from('profiles').select('balance').eq('id', user.id).single()
         if (prof) {
-          await serviceClient.from('profiles').update({ balance: (prof.balance ?? 0) - oldCredit }).eq('id', user.id)
+          await serviceClient.from('profiles').update({ balance: (prof.balance ?? 0) - oldCredit + newCredit }).eq('id', user.id)
         }
       }
 
-      // Update bet with new line, result, payout, settled_at — the DB trigger will credit the new payout
+      // Update bet with new line, result, payout, settled_at.
+      // Skip the trigger's credit by using serviceClient — the trigger will still fire but since
+      // old.result is NOT NULL the current trigger does nothing (it only handles initial settlement).
       const { error: updateError } = await serviceClient
         .from('bets')
         .update({
