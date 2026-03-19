@@ -132,4 +132,40 @@ export async function betsRoutes(app: FastifyInstance) {
       potential_payout: calculatePayout(amount, odds_at_place),
     })
   })
+
+  app.patch('/bets/:id/line', { preHandler: requireAuth }, async (request, reply) => {
+    const user = (request as any).user
+    const supabase = (request as any).supabase
+    const { id } = request.params as { id: string }
+    const { line_at_place } = request.body as { line_at_place: unknown }
+
+    if (typeof line_at_place !== 'number' || !isFinite(line_at_place)) {
+      return reply.status(400).send({ error: 'line_at_place must be a finite number' })
+    }
+
+    // Only allow editing unsettled bets owned by the user
+    const { data: bet, error: fetchError } = await supabase
+      .from('bets')
+      .select('id, result, market')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (fetchError || !bet) return reply.status(404).send({ error: 'Bet not found' })
+    if (bet.market !== 'spreads' && bet.market !== 'totals') {
+      return reply.status(400).send({ error: 'line_at_place only applies to spreads and totals' })
+    }
+
+    const { error: updateError } = await supabase
+      .from('bets')
+      .update({ line_at_place })
+      .eq('id', id)
+
+    if (updateError) {
+      console.error('Line update error:', updateError)
+      return reply.status(500).send({ error: 'Failed to update line' })
+    }
+
+    return reply.send({ ok: true, line_at_place })
+  })
 }

@@ -41,6 +41,7 @@ export type BetWithGame = {
   pick: 'home' | 'away' | 'over' | 'under'
   amount: number
   odds_at_place: number
+  line_at_place: number | null
   result: 'win' | 'loss' | 'push' | null
   payout: number | null
   placed_at: string
