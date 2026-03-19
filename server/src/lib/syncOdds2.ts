@@ -83,8 +83,8 @@ async function processPage(
     
     // Extract team names from odds lines (they're duplicated across all lines for the same event)
     const firstOdds = event.odds[0]
-    const homeTeam = firstOdds?.home_team || event.home_team
-    const awayTeam = firstOdds?.away_team || event.away_team
+    const homeTeam = (firstOdds as any)?.home_team || event.home_team
+    const awayTeam = (firstOdds as any)?.away_team || event.away_team
 
     // Skip events with missing required fields
     if (!eventId || !startTime || !homeTeam || !awayTeam) {
@@ -165,7 +165,7 @@ export async function syncOdds2() {
         offset,
       } as any)
 
-      const events: EventWithOdds[] = response.data ?? []
+      const events: EventWithOdds[] = (response.data as any) ?? []
       const pagination = (response as any).pagination ?? response.meta?.pagination
       hasMore = pagination?.has_more === true
       offset = pagination?.next_offset ?? offset + events.length
