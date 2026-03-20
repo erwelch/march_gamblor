@@ -11,6 +11,8 @@ type GameRow = Database['public']['Tables']['games']['Row']
 export function normalizeTeamName(name: string): string {
   return name
     .toLowerCase()
+    // Strip parenthetical suffixes like (CA), (NY), (FL) used by NCAA API
+    .replace(/\s*\([a-z]{2}\)\s*/g, ' ')
     // Known aliases — map to a canonical form before stripping
     .replace(/\bconn\b/g, 'connecticut')
     .replace(/\buconn\b/g, 'connecticut')
@@ -29,7 +31,7 @@ export function normalizeTeamName(name: string): string {
     .replace(/\bcollege\b/g, '')
     // Strip common mascots / nicknames
     .replace(
-      /\b(wildcats?|blue\s*devils?|huskies|husky|tigers?|bulldogs?|lions?|volunteers?|jayhawks?|tar\s*heels?|wolfpack|wolf\s*pack|crimson\s*tide|fighting\s*irish|longhorns?|buckeyes?|hoosiers?|spartans?|wolverines?|hawkeyes?|cyclones?|gators?|gophers?|cornhuskers?|huskers?|sooners?|cowboys?|horned\s*frogs?|aggies?|razorbacks?|mountaineers?|cavaliers?|hokies?|demon\s*deacons?|eagles?|falcons?|bears?|badgers?|illini|boilermakers?|terrapins?|terps?|golden\s*gophers?|golden\s*bears?|golden\s*flashes?|golden\s*eagles?|blue\s*jays?|cardinals?|bruins?|cougars?|rams?|mustangs?|rebels?|trojans?|seminoles?|nittany\s*lions?|orangemen?|orange|red\s*raiders?|horns?|toreros?|flyers?|retrievers?|retrievers?|anteaters?|banana\s*slugs?)\b/g,
+      /\b(wildcats?|blue\s*devils?|huskies|husky|tigers?|bulldogs?|lions?|volunteers?|jayhawks?|tar\s*heels?|wolfpack|wolf\s*pack|crimson\s*tide|fighting\s*irish|longhorns?|buckeyes?|hoosiers?|spartans?|wolverines?|hawkeyes?|cyclones?|gators?|gophers?|cornhuskers?|huskers?|sooners?|cowboys?|horned\s*frogs?|aggies?|razorbacks?|mountaineers?|cavaliers?|hokies?|demon\s*deacons?|eagles?|falcons?|bears?|badgers?|illini|boilermakers?|terrapins?|terps?|golden\s*gophers?|golden\s*bears?|golden\s*flashes?|golden\s*eagles?|blue\s*jays?|cardinals?|bruins?|cougars?|rams?|mustangs?|rebels?|trojans?|seminoles?|nittany\s*lions?|orangemen?|orange|red\s*raiders?|horns?|toreros?|flyers?|retrievers?|retrievers?|anteaters?|banana\s*slugs?|gaels?|lumberjacks?|matadors?|ducks?|beavers?|utes?|runnin\s*rebels?|mean\s*green|49ers?|rainbow\s*warriors?|chanticleers?|musketeers?|bearcats?|ramblers?|phoenix|greyhounds?|wolves?|wolf\s*pack|penguins?|zips?|oaks?|scarlet\s*knights?|scarlet\s*hawks?|billikens?|friars?|bonnies?)\b/g,
       ''
     )
     // Strip state
