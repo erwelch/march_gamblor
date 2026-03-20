@@ -12,7 +12,7 @@ export function normalizeTeamName(name: string): string {
   return name
     .toLowerCase()
     // Strip parenthetical suffixes like (CA), (NY), (FL) used by NCAA API
-    .replace(/\s*\([a-z]{2}\)\s*/g, ' ')
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
     // Known aliases — map to a canonical form before stripping
     .replace(/\bconn\b/g, 'connecticut')
     .replace(/\buconn\b/g, 'connecticut')
