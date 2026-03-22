@@ -151,10 +151,6 @@ export async function syncOdds2() {
   let offset = 0
   let hasMore = true
 
-  // Only fetch games starting within the next 3 days
-  const now = new Date()
-  const cutoff = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)
-
   const pagePromises: Promise<{ upserted: number }>[] = []
 
   try {
@@ -181,13 +177,6 @@ export async function syncOdds2() {
 
       total += events.length
       pagePromises.push(processPage(supabase, events))
-
-      // Stop paginating if the last event on this page is beyond the 3-day window
-      const lastEvent = events[events.length - 1]
-      if (lastEvent?.start_time && new Date(lastEvent.start_time) > cutoff) {
-        console.log(`[syncOdds2] Last event on page exceeds 3-day window, stopping pagination`)
-        break
-      }
     }
 
     // Wait for all in-flight page processing to complete

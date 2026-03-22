@@ -6,12 +6,17 @@ export async function gamesRoutes(app: FastifyInstance) {
     const user = (request as any).user
     const supabase = (request as any).supabase
 
+    // Fetch recent/upcoming games: all scheduled & live, plus final games from last 2 days
+    const twoDaysAgo = new Date()
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2)
+    const twoDaysAgoDate = twoDaysAgo.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+
     const { data: rawGames } = await supabase
       .from('games')
       .select('*, odds(*)')
-      .in('status', ['scheduled', 'live', 'final'])
+      .or(`status.in.(scheduled,live),and(status.eq.final,game_date.gte.${twoDaysAgoDate})`)
       .order('start_time', { ascending: true })
-      .limit(50)
+      .limit(200)
 
     const games = (rawGames ?? []).map((g: any) => ({
       ...g,
